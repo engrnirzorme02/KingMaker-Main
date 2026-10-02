@@ -270,17 +270,17 @@ data class ReviewPacket(
 
         fun getDefaultCDRP1Dimensions(baseScore: Int, title: String): List<DimensionRating> {
             return listOf(
-                DimensionRating("D01", "Decision & Scope Integrity", (baseScore + 1).coerceIn(1, 10), "Scope bounded to '$title'; non-goals clearly excluded."),
-                DimensionRating("D02", "Context & Evidence Integrity", baseScore.coerceIn(1, 10), "Material claims grounded in empirical telemetry and axiomatic constraints."),
-                DimensionRating("D03", "Architecture & Technical Fit", (baseScore + 1).coerceIn(1, 10), "Component topology integrates cleanly without tight coupling."),
-                DimensionRating("D04", "Data & State Integrity", (baseScore + 1).coerceIn(1, 10), "ACID WAL persistence and linearizable state transitions guaranteed."),
-                DimensionRating("D05", "Security & Privacy", baseScore.coerceIn(1, 10), "Secret isolation, cryptographic attestation, zero plain secrets in APK."),
-                DimensionRating("D06", "Reliability & Failure Handling", baseScore.coerceIn(1, 10), "Circuit breakers and graceful degradation under network partitions."),
-                DimensionRating("D07", "Performance & Scalability", (baseScore - 1).coerceIn(1, 10), "Sub-50ms latency achievable; indexing and caching strategy required."),
-                DimensionRating("D08", "UX & Human Factors", (baseScore + 1).coerceIn(1, 10), "Cognitive burden minimised with progressive disclosure and clear Bangla copy."),
-                DimensionRating("D09", "Integration & Dependency Integrity", baseScore.coerceIn(1, 10), "Directed acyclic dependency tree validated with Tarjan SCC; no cyclic locks."),
-                DimensionRating("D10", "Cost & Operational Sustainability", (baseScore - 1).coerceIn(1, 10), "Operational runtime fits within budgeted \$0.50-\$2.00/run policy cap."),
-                DimensionRating("D11", "Reversibility & Migration", baseScore.coerceIn(1, 10), "Two-way door: rollback migration script verified before deployment.")
+                DimensionRating("CDR-01", "Problem & Goal Integrity", (baseScore + 1).coerceIn(1, 10), "Problem bounded to '$title'; explicit non-goals verified."),
+                DimensionRating("CDR-02", "Context & Constraint Integrity", baseScore.coerceIn(1, 10), "Material claims grounded; non-negotiable boundaries enforced."),
+                DimensionRating("CDR-03", "Option & Trade-off Coverage", (baseScore + 1).coerceIn(1, 10), "Realistic alternatives evaluated including status quo."),
+                DimensionRating("CDR-04", "Technical Feasibility & Architecture Fit", (baseScore + 1).coerceIn(1, 10), "Topology integrates cleanly without cyclic coupling."),
+                DimensionRating("CDR-05", "Data & Integration Integrity", baseScore.coerceIn(1, 10), "ACID WAL persistence and verifiable state transitions guaranteed."),
+                DimensionRating("CDR-06", "Security, Privacy & Trust Boundary", baseScore.coerceIn(1, 10), "Secret isolation, cryptographic attestation, zero hardcoded keys."),
+                DimensionRating("CDR-07", "Reliability, Ops & Failure Modes", baseScore.coerceIn(1, 10), "Circuit breakers and graceful degradation under failures."),
+                DimensionRating("CDR-08", "Scalability, Performance & Complexity", (baseScore - 1).coerceIn(1, 10), "Low latency; cognitive and architectural complexity penalized."),
+                DimensionRating("CDR-09", "Cost & Resource Sustainability", (baseScore - 1).coerceIn(1, 10), "Execution within budgeted \$0.50-\$2.00 policy cap."),
+                DimensionRating("CDR-10", "UX, Human Factors & Adoption", (baseScore + 1).coerceIn(1, 10), "Bilingual Bengali/English accessibility and progressive disclosure."),
+                DimensionRating("CDR-11", "Evidence, Governance & System Integrity", baseScore.coerceIn(1, 10), "Tarjan SCC validated DAG and immutable audit event log.")
             )
         }
     }

@@ -25,7 +25,7 @@ import kotlinx.coroutines.sync.withLock
         DecisionBranchEntity::class,
         ResolutionTaskEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -91,6 +91,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * KingMaker v7.0 Consolidation: Migration from version 3 to 4.
+         * Adds raw user statement, provisional interpretation, context questions, framing, and diagram URI.
+         * Explicit non-destructive schema evolution.
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE decisions ADD COLUMN rawUserStatement TEXT")
+                db.execSQL("ALTER TABLE decisions ADD COLUMN provisionalInterpretation TEXT")
+                db.execSQL("ALTER TABLE decisions ADD COLUMN contextQuestionsJson TEXT")
+                db.execSQL("ALTER TABLE decisions ADD COLUMN framingJson TEXT")
+                db.execSQL("ALTER TABLE decisions ADD COLUMN architecturalDiagramUri TEXT")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val dbInstance = Room.databaseBuilder(
@@ -98,8 +113,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "kingmaker.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
-                    .fallbackToDestructiveMigrationOnDowngrade()
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                     .build()
                 INSTANCE = dbInstance

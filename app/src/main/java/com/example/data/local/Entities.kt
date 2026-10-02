@@ -45,7 +45,7 @@ object DecisionStatus {
  * - ASSUMPTION cannot be silently rendered as FACT.
  * - INFERENCE cannot become evidence merely because a model is confident.
  */
-enum class ClaimType {
+enum class EpistemicType {
     FACT,
     CONSTRAINT,
     PREFERENCE,
@@ -58,7 +58,57 @@ enum class ClaimType {
 }
 
 // Backward compatibility alias for existing code
-typealias ProvenanceType = ClaimType
+typealias ClaimType = EpistemicType
+typealias ProvenanceType = EpistemicType
+
+/**
+ * Section 4.2: TrustState.
+ * UNREVIEWED, USER_ATTESTED, VERIFIED_SOURCE, DISPUTED, STALE.
+ */
+enum class TrustState {
+    UNREVIEWED,
+    USER_ATTESTED,
+    VERIFIED_SOURCE,
+    DISPUTED,
+    STALE
+}
+
+/**
+ * Section 6: Consequential Context Questions.
+ */
+enum class QuestionStatus {
+    UNANSWERED,
+    ANSWERED,
+    UNKNOWN,
+    DEFERRED,
+    NOT_APPLICABLE
+}
+
+data class ContextQuestion(
+    val id: String,
+    val question: String,
+    val consequence: String,
+    val category: String = "ARCHITECTURE",
+    val status: QuestionStatus = QuestionStatus.UNANSWERED,
+    val answer: String? = null,
+    val epistemicType: EpistemicType = EpistemicType.UNKNOWN
+)
+
+/**
+ * Section 7: Framing Model for human confirmation.
+ */
+data class FramingModel(
+    val objective: String = "",
+    val nonGoals: List<String> = emptyList(),
+    val constraints: List<String> = emptyList(),
+    val criteria: List<String> = emptyList(),
+    val assumptions: List<String> = emptyList(),
+    val unknowns: List<String> = emptyList(),
+    val options: List<String> = emptyList(),
+    val impact: Double = 0.5,
+    val reversibility: Double = 0.5,
+    val affectedSystems: List<String> = emptyList()
+)
 
 /**
  * Section 46.2: Explicit Provenance Modes.
@@ -183,6 +233,13 @@ data class DecisionEntity(
     val observedOutcome: String? = null,
     val outcomeDivergence: String? = null, // ALIGNED, MINOR_DRIFT, MAJOR_DRIFT, DECISION_INVALIDATION
     val outcomeReviewDate: Long? = null,
+
+    // Capture, Context & Framing Extensions (Section 5, 6, 7)
+    val rawUserStatement: String? = null,
+    val provisionalInterpretation: String? = null,
+    val contextQuestionsJson: String? = null,
+    val framingJson: String? = null,
+    val architecturalDiagramUri: String? = null,
 
     val createdTimestamp: Long = System.currentTimeMillis(),
     val updatedTimestamp: Long = System.currentTimeMillis()
