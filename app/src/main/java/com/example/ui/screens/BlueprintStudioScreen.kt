@@ -7,7 +7,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +26,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DataObject
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
@@ -37,8 +37,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -50,18 +53,21 @@ import androidx.compose.ui.unit.sp
 import com.example.ai.ReviewPacket
 import com.example.core.math.AdmissionTestResult
 import com.example.core.math.FinalizationCertificate
+import com.example.data.local.ClaimType
 import com.example.data.local.DecisionEntity
 import com.example.data.local.DecisionEventEntity
-import com.example.data.local.ProvenanceType
+import com.example.data.local.OutcomeDivergence
 import com.example.services.ExportService
+import com.example.ui.localization.LocalAppStrings
 import com.example.ui.BlueprintLens
-import com.example.ui.components.CeoSignatureSlider
+import com.example.ui.components.ApprovalGovernanceSheet
 import com.example.ui.components.HapticFeedbackHelper
 import com.example.ui.theme.AmberFlame
 import com.example.ui.theme.BorderHairline
 import com.example.ui.theme.CrimsonAlert
 import com.example.ui.theme.CyanTelemetry
 import com.example.ui.theme.EmeraldGate
+import com.example.ui.theme.GoldWarning
 import com.example.ui.theme.IndigoNexus
 import com.example.ui.theme.ObsidianBg
 import com.example.ui.theme.SlateSurface
@@ -76,6 +82,11 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
+/**
+ * KingMaker v7.0: Living Blueprint Studio & 5-Lens Projection (Section 16, 53.4, 57).
+ * Lenses: Executive, Architecture, UX, Developer, Governance.
+ * Replaces swipe slider with audited ApprovalGovernanceSheet.
+ */
 @Composable
 fun BlueprintStudioScreen(
     decision: DecisionEntity,
@@ -88,15 +99,40 @@ fun BlueprintStudioScreen(
     certificate: FinalizationCertificate?,
     gateErrorMessage: String?,
     onSelectLens: (BlueprintLens) -> Unit,
-    onSignApproved: () -> Unit,
+    onSignApproved: () -> Unit = {},
+    onApproveWithDetails: (selectedOption: String, rationale: String, preMortem: String?) -> Unit = { _, _, _ -> },
+    onReject: (rationale: String) -> Unit = {},
+    onDefer: (rationale: String) -> Unit = {},
+    onRequestRevision: (instructions: String) -> Unit = {},
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val strings = LocalAppStrings.current
     val coroutineScope = rememberCoroutineScope()
     val isApproved = decision.status == "APPROVED" || signatureHash != null
+    var showApprovalSheet by remember { mutableStateOf(false) }
+
     val exportService = remember {
         ExportService(context, AppDatabase.getInstance(context).decisionDao())
+    }
+
+    if (showApprovalSheet) {
+        ApprovalGovernanceSheet(
+            decision = decision,
+            reviewPacket = reviewPacket,
+            admissionResult = admissionResult,
+            certificate = certificate,
+            signatureHash = signatureHash,
+            onDismiss = { showApprovalSheet = false },
+            onApprove = { opt, rat, pm ->
+                onApproveWithDetails(opt, rat, pm)
+                onSignApproved()
+            },
+            onReject = onReject,
+            onDefer = onDefer,
+            onRequestRevision = onRequestRevision
+        )
     }
 
     Column(
@@ -104,7 +140,7 @@ fun BlueprintStudioScreen(
             .fillMaxSize()
             .background(ObsidianBg)
     ) {
-        // Top Header
+        // Studio Top App Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -114,14 +150,14 @@ fun BlueprintStudioScreen(
             IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = strings.back,
                     tint = TextPrimary
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "D6 SYNTHESIS & D7 REVIEW COCKPIT",
+                        text = strings.blueprintHeader,
                         color = TextPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -182,8 +218,15 @@ fun BlueprintStudioScreen(
                         }
                         .padding(horizontal = 12.dp, vertical = 7.dp)
                 ) {
+                    val lensLabel = when (lens) {
+                        BlueprintLens.EXECUTIVE -> strings.lensExecutive
+                        BlueprintLens.ARCHITECTURE -> strings.lensArchitecture
+                        BlueprintLens.UX -> strings.lensUx
+                        BlueprintLens.DEVELOPER -> strings.lensDeveloper
+                        BlueprintLens.GOVERNANCE -> strings.lensGovernance
+                    }
                     Text(
-                        text = lens.name,
+                        text = lensLabel,
                         color = if (isSelected) Color.White else TextMuted,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
@@ -200,7 +243,6 @@ fun BlueprintStudioScreen(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            // Error Message Banner if CEO Gate rejected
             if (gateErrorMessage != null) {
                 item {
                     Box(
@@ -220,13 +262,13 @@ fun BlueprintStudioScreen(
                 }
             }
 
-            // Directive 2: D6 Synthesis Review Packet Card
+            // D6 Synthesis Review Packet Card
             item {
                 ReviewPacketCard(packet = reviewPacket, decision = decision)
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            // Directive 3: Admission Test & Finalization Certificate Card
+            // Admission Test & Finalization Certificate Card
             item {
                 AdmissionTestCard(
                     admissionResult = admissionResult,
@@ -236,7 +278,7 @@ fun BlueprintStudioScreen(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            // Directive 14: 5 Lenses Studio (Grounded in actual decision data)
+            // 5 Lenses Studio (Grounded in actual decision data)
             item {
                 when (activeLens) {
                     BlueprintLens.EXECUTIVE -> ExecutiveLensView(decision, activeBranchId)
@@ -265,16 +307,75 @@ fun BlueprintStudioScreen(
                 Spacer(modifier = Modifier.height(14.dp))
             }
 
-            // Directive 13: CEO Gate Slider
+            // Section 53.4: CEO Gate Governance Trigger
             item {
-                CeoSignatureSlider(
-                    isApproved = isApproved,
-                    currentStatus = decision.status,
-                    admissionResult = admissionResult,
-                    certificate = certificate,
-                    signatureHash = signatureHash,
-                    onSignApproved = onSignApproved
-                )
+                if (isApproved) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(EmeraldGate.copy(alpha = 0.12f), shape = RoundedCornerShape(10.dp))
+                            .border(1.dp, EmeraldGate, shape = RoundedCornerShape(10.dp))
+                            .padding(14.dp)
+                    ) {
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldGate, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "STATUS: APPROVED & ATTESTED BY HUMAN CEO",
+                                    color = EmeraldGate,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            if (signatureHash != null) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "SHA-256 ATTESTATION HASH: $signatureHash",
+                                    color = TextMuted,
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            if (decision.approvalRationale != null) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "RATIONALE: \"${decision.approvalRationale}\"",
+                                    color = TextPrimary,
+                                    fontSize = 10.sp
+                                )
+                            }
+                            if (decision.preMortemRationale != null) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "PRE-MORTEM: \"${decision.preMortemRationale}\"",
+                                    color = GoldWarning,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Button(
+                        onClick = { showApprovalSheet = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldGate),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Fingerprint, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "${strings.btnSignApproveCeo} >>",
+                            color = Color.Black,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }
@@ -287,7 +388,7 @@ fun ReviewPacketCard(packet: ReviewPacket?, decision: DecisionEntity) {
         modifier = Modifier
             .fillMaxWidth()
             .background(SlateSurface, shape = RoundedCornerShape(10.dp))
-            .border(1.dp, CyanTelemetry.copy(alpha = 0.4f), shape = RoundedCornerShape(10.dp))
+            .border(1.dp, BorderHairline, shape = RoundedCornerShape(10.dp))
             .padding(14.dp)
     ) {
         Column {
@@ -297,77 +398,56 @@ fun ReviewPacketCard(packet: ReviewPacket?, decision: DecisionEntity) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "D6 SYNTHESIS: REVIEW PACKET",
+                    text = "D6 SYNTHESIS REVIEW PACKET",
                     color = CyanTelemetry,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
                 )
                 Text(
-                    text = "DQS: ${String.format("%.2f", decision.dqsScore)}",
-                    color = EmeraldGate,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
+                    text = "MODE: [SIMULATED]",
+                    color = AmberFlame,
+                    fontSize = 8.sp,
                     fontFamily = FontFamily.Monospace
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
 
-            Text(
-                text = packet?.summary ?: "Bounded architectural context: ${decision.problemStatement}",
-                color = TextPrimary,
-                fontSize = 11.sp,
-                lineHeight = 15.sp
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "SUPPORTING EVIDENCE & PROVENANCE:",
-                color = TextMuted,
-                fontSize = 8.sp,
-                fontFamily = FontFamily.Monospace
-            )
-            val evidenceList = packet?.supportingEvidence ?: listOf(
-                com.example.ai.EvidenceItem("Scope & boundaries confirmed at D3", ProvenanceType.VERIFIED, "Human D3 Gate"),
-                com.example.ai.EvidenceItem("Durability assured via SQLite 3 WAL append-only event store", ProvenanceType.EXPERT_INFERENCE, "Architecture Stress Test")
-            )
-            evidenceList.forEach { item ->
-                Row(modifier = Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .background(
-                                if (item.provenance == ProvenanceType.VERIFIED) EmeraldGate.copy(alpha = 0.15f) else CyanTelemetry.copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(4.dp)
-                            )
-                            .padding(horizontal = 4.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            text = item.provenance.name,
-                            color = if (item.provenance == ProvenanceType.VERIFIED) EmeraldGate else CyanTelemetry,
-                            fontSize = 7.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = item.claim, color = TextSecondary, fontSize = 10.sp)
-                }
+            if (packet != null) {
+                Text(
+                    text = packet.summary,
+                    color = TextPrimary,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "RECOMMENDED ACTION: ${packet.recommendation}",
+                    color = EmeraldGate,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    text = "STRONGEST ALTERNATIVE: ${packet.strongestAlternative}",
+                    color = CyanTelemetry,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    text = "WHAT COULD GO WRONG: ${packet.whatCouldGoWrong}",
+                    color = AmberFlame,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            } else {
+                Text(
+                    text = "Decision problem statement: ${decision.problemStatement}. Complete D4-D5 War Room to synthesize full review packet.",
+                    color = TextMuted,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "RECOMMENDED NEXT ACTION:",
-                color = AmberFlame,
-                fontSize = 8.sp,
-                fontFamily = FontFamily.Monospace
-            )
-            Text(
-                text = packet?.recommendedNextAction ?: "Review Admission Test criteria at D7 for executive attestation.",
-                color = TextMuted,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace
-            )
         }
     }
 }
@@ -378,11 +458,14 @@ fun AdmissionTestCard(
     certificate: FinalizationCertificate?,
     isApproved: Boolean
 ) {
+    val passed = certificate != null || admissionResult?.allPassed == true
+    val statusColor = if (passed) EmeraldGate else AmberFlame
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(SlateSurface, shape = RoundedCornerShape(10.dp))
-            .border(1.dp, if (certificate != null) EmeraldGate else BorderHairline, shape = RoundedCornerShape(10.dp))
+            .border(1.dp, if (passed) EmeraldGate.copy(alpha = 0.5f) else BorderHairline, shape = RoundedCornerShape(10.dp))
             .padding(14.dp)
     ) {
         Column {
@@ -391,245 +474,113 @@ fun AdmissionTestCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (passed) Icons.Default.CheckCircle else Icons.Default.Shield,
+                        contentDescription = null,
+                        tint = statusColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "ADMISSION TEST & CERTIFICATE (D7)",
+                        color = statusColor,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
                 Text(
-                    text = "DIRECTIVE 3: ADMISSION TEST & FINALIZATION",
-                    color = TextPrimary,
-                    fontSize = 11.sp,
+                    text = if (passed) "ALL PASSED" else "PENDING",
+                    color = statusColor,
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
                 )
-                if (certificate != null) {
-                    Box(
-                        modifier = Modifier
-                            .background(EmeraldGate.copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(text = "CERTIFIED", color = EmeraldGate, fontSize = 8.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                    }
-                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            AdmissionCheckRow("1. SPECIFICITY", admissionResult?.specificityPass == true, admissionResult?.specificityNote ?: "Verified bounded problem statement.")
-            AdmissionCheckRow("2. NOVELTY", admissionResult?.noveltyPass == true, admissionResult?.noveltyNote ?: "Identifies distinct architectural trade-offs.")
-            AdmissionCheckRow("3. ACTIONABILITY", admissionResult?.actionabilityPass == true, admissionResult?.actionabilityNote ?: "Concrete implementation direction defined.")
-            AdmissionCheckRow("4. VALUE", admissionResult?.valuePass == true, admissionResult?.valueNote ?: "Value aligned; evidence provenance meets rigor.")
+            Text(
+                text = "Criteria: Specificity, Novelty, Actionability, Value. Must pass prior to human approval signature.",
+                color = TextMuted,
+                fontSize = 10.sp
+            )
 
             if (certificate != null) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF0F172A), shape = RoundedCornerShape(6.dp))
-                        .border(1.dp, EmeraldGate.copy(alpha = 0.4f), shape = RoundedCornerShape(6.dp))
-                        .padding(8.dp)
-                ) {
-                    Column {
-                        Text(text = "FINALIZATION CERTIFICATE ISSUED:", color = EmeraldGate, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                        Text(text = "ID: ${certificate.certificateId}", color = TextMuted, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
-                        Text(text = "HASH: ${certificate.certificateHash}", color = CyanTelemetry, fontSize = 8.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
-                    }
-                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "CERTIFICATE ID: ${certificate.certificateId}",
+                    color = CyanTelemetry,
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    text = "HASH: ${certificate.certificateHash}",
+                    color = TextMuted,
+                    fontSize = 8.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1
+                )
             }
         }
     }
 }
 
 @Composable
-private fun AdmissionCheckRow(label: String, passed: Boolean, note: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = if (passed) Icons.Default.CheckCircle else Icons.Default.Warning,
-            contentDescription = null,
-            tint = if (passed) EmeraldGate else CrimsonAlert,
-            modifier = Modifier.size(13.dp)
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(text = "$label: ", color = TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-        Text(text = note, color = TextMuted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-    }
-}
-
-/**
- * Directive 14: Dynamic 5 Lenses without fabricated hardcoded metrics.
- */
-@Composable
 fun ExecutiveLensView(decision: DecisionEntity, branchId: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(SlateSurface, shape = RoundedCornerShape(10.dp))
-            .border(1.dp, BorderHairline, shape = RoundedCornerShape(10.dp))
-            .padding(14.dp)
-    ) {
-        Column {
-            Text(
-                text = "EXECUTIVE LENS: RISK PROFILE & VALUE ALIGNMENT [$branchId]",
-                color = CyanTelemetry,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            MetricRow("ACTIVE TIMELINE BRANCH", branchId)
-            MetricRow("DECISION QUALITY SCORE (DQS)", String.format("%.2f / 1.00", decision.dqsScore))
-            MetricRow("COMPLEXITY TIER", "${decision.complexityTier} (Score: ${String.format("%.2f", decision.complexityScore)})")
-            MetricRow("FAILURE RISK WEIGHT", String.format("%.0f%%", decision.risk * 100))
-            MetricRow("BUSINESS IMPACT WEIGHT", String.format("%.0f%%", decision.impact * 100))
-            MetricRow("EVIDENCE PROVENANCE", decision.evidenceType)
-
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(text = "Executive Governance Summary:", color = TextMuted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-            Text(
-                text = "Operational execution on timeline branch '$branchId'. All claims and audit records are grounded in SQLite WAL persistence without simulated metric guarantees.",
-                color = TextSecondary,
-                fontSize = 11.sp,
-                lineHeight = 15.sp
-            )
-        }
+    LensCard(title = "EXECUTIVE LENS: STRATEGIC IMPACT & ROI [$branchId]") {
+        MetricRow("OBJECTIVE", decision.title)
+        MetricRow("COMPLEXITY TIER", "${decision.complexityTier} (${String.format("%.2f", decision.complexityScore)})")
+        MetricRow("RISK EXPOSURE", "${(decision.risk * 100).toInt()}%")
+        MetricRow("FINANCIAL BUDGET", "${(decision.budget * 100).toInt()}% Envelope")
+        MetricRow("CHANGEABILITY", if (decision.changeability >= 0.5) "Two-Way Door (Reversible)" else "One-Way Door (High Commitment)")
     }
 }
 
 @Composable
 fun ArchitectureLensView(decision: DecisionEntity, branchId: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(SlateSurface, shape = RoundedCornerShape(10.dp))
-            .border(1.dp, BorderHairline, shape = RoundedCornerShape(10.dp))
-            .padding(14.dp)
-    ) {
-        Column {
-            Text(
-                text = "ARCHITECTURE LENS: COMPONENT BOUNDARIES & C4 [$branchId]",
-                color = CyanTelemetry,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF0A0F1D), shape = RoundedCornerShape(6.dp))
-                    .border(1.dp, Color(0xFF1E293B), shape = RoundedCornerShape(6.dp))
-                    .padding(10.dp)
-            ) {
-                val c4Diagram = """
-[Edge Client: Android APK]
-         │ (WAL Journal Write)
-         ▼
-[Local Room SQLite Database] ◄── [Append-Only Event Store (branch: $branchId)]
-         │
-         ▼ (Cryptographic Ledger Hash Chain)
-[Attested Decision Record: ${decision.id}]
-                """.trimIndent()
-
-                Text(
-                    text = c4Diagram,
-                    color = EmeraldGate,
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                    lineHeight = 14.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(text = "STORAGE ENGINE CONFIGURATION:", color = TextMuted, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
-            Text(
-                text = "PRAGMA journal_mode = WAL;\nPRAGMA synchronous = NORMAL;\n-- active branch: $branchId",
-                color = CyanTelemetry,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace
-            )
-        }
+    LensCard(title = "ARCHITECTURE LENS: COMPONENT TOPOLOGY [$branchId]") {
+        MetricRow("PRIMARY PATTERN", "Append-Only Event Sourcing / Reactive State Machine")
+        MetricRow("PERSISTENCE ENGINE", "Android Room SQLite (WAL Mode Active)")
+        MetricRow("EVIDENCE GRADE", decision.evidenceType)
+        MetricRow("GRAPH REVISION HASH", (decision.revisionHash ?: "HEAD-UNSEALED").take(18) + "...")
     }
 }
 
 @Composable
 fun UxLensView(decision: DecisionEntity, branchId: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(SlateSurface, shape = RoundedCornerShape(10.dp))
-            .border(1.dp, BorderHairline, shape = RoundedCornerShape(10.dp))
-            .padding(14.dp)
-    ) {
-        Column {
-            Text(
-                text = "UX LENS: STATE TRANSITIONS & GOVERNANCE BOUNDARIES",
-                color = CyanTelemetry,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            MetricRow("ACTIVE BRANCH", branchId)
-            MetricRow("CURRENT PIPELINE STAGE", decision.status)
-            MetricRow("D3 CONFIRMATION", if (decision.scopeConfirmed && decision.focusAreaConfirmed) "VERIFIED" else "PENDING")
-            MetricRow("HUMAN-IN-THE-LOOP", "CEO Gate strictly enforced at D7")
-
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(text = "Canonical State Machine Flow:", color = TextMuted, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
-            Text(
-                text = "D1 Intake ➔ D2 Framing ➔ D3 Confirmation ➔ D4 Debate ➔ D5 Critique ➔ D6 Synthesis ➔ D7 Review ➔ APPROVED",
-                color = TextSecondary,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace
-            )
-        }
+    LensCard(title = "UX LENS: HUMAN COGNITION & USABILITY [$branchId]") {
+        MetricRow("COGNITIVE LOAD", "Progressive Disclosure (Details Collapsed by Default)")
+        MetricRow("ACCESSIBILITY", "48dp Touch Targets • TalkBack Semantics Enabled")
+        MetricRow("LANGUAGE POSTURE", "Bangla + English Dual-Language Explanations")
+        MetricRow("GOVERNANCE UI", "Modal Sheet Review with Explicit Rationale Validation")
     }
 }
 
 @Composable
 fun DeveloperLensView(decision: DecisionEntity, branchId: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(SlateSurface, shape = RoundedCornerShape(10.dp))
-            .border(1.dp, BorderHairline, shape = RoundedCornerShape(10.dp))
-            .padding(14.dp)
-    ) {
-        Column {
+    LensCard(title = "DEVELOPER LENS: CODE INTERFACES & SCHEMAS [$branchId]") {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF0A0F1D), shape = RoundedCornerShape(6.dp))
+                .padding(10.dp)
+        ) {
             Text(
-                text = "DEVELOPER LENS: CODE INTERFACES & REVISION SCHEMA",
-                color = CyanTelemetry,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF0A0F1D), shape = RoundedCornerShape(6.dp))
-                    .padding(10.dp)
-            ) {
-                Text(
-                    text = """
+                text = """
 // Immutable Decision Projection
 data class Decision(
     val id: String = "${decision.id}",
     val status: String = "${decision.status}",
-    val dqsScore: Double = ${decision.dqsScore},
-    val branchId: String = "$branchId"
+    val revHash: String = "${decision.revisionHash?.take(12) ?: "HEAD"}",
+    val policy: String = "${decision.policyVersion}"
 )
-                    """.trimIndent(),
-                    color = CyanTelemetry,
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
+                """.trimIndent(),
+                color = CyanTelemetry,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace
+            )
         }
     }
 }
@@ -643,6 +594,45 @@ fun GovernanceLensView(
     onExportJson: () -> Unit,
     onCopyJson: () -> Unit
 ) {
+    LensCard(title = "GOVERNANCE LENS: AUDIT TRAIL & ADR EXPORT [$branchId]") {
+        MetricRow("APPEND-ONLY LOG", "${events.size} Immutable Events")
+        MetricRow("EVIDENCE TYPE", decision.evidenceType)
+        MetricRow("REVISION HASH", (decision.revisionHash ?: "HEAD-SEALED").take(20) + "...")
+        MetricRow("ATTESTATION STATE", if (signatureHash != null) "ATTESTED BY HUMAN CEO" else "PENDING D7 AUTHORIZATION")
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = onExportJson,
+                colors = ButtonDefaults.buttonColors(containerColor = IndigoNexus),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.weight(1f).height(40.dp)
+            ) {
+                Icon(Icons.Default.Share, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("SHARE ADR", color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            }
+
+            Button(
+                onClick = onCopyJson,
+                colors = ButtonDefaults.buttonColors(containerColor = SlateSurfaceElevated),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.weight(1f).height(40.dp)
+            ) {
+                Icon(Icons.Default.ContentCopy, contentDescription = null, tint = CyanTelemetry, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("COPY ADR", color = CyanTelemetry, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LensCard(title: String, content: @Composable () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -652,46 +642,14 @@ fun GovernanceLensView(
     ) {
         Column {
             Text(
-                text = "GOVERNANCE LENS: AUDIT TRAIL & EXPORT [$branchId]",
+                text = title,
                 color = CyanTelemetry,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace
             )
             Spacer(modifier = Modifier.height(10.dp))
-
-            MetricRow("REVISION LOG ENTRIES", "${events.size} Append-Only Events")
-            MetricRow("EVIDENCE TYPE", decision.evidenceType)
-            MetricRow("ATTESTATION STATE", if (signatureHash != null) "ATTESTED BY CEO" else "PENDING D7 AUTHORIZATION")
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = onExportJson,
-                    colors = ButtonDefaults.buttonColors(containerColor = IndigoNexus),
-                    shape = RoundedCornerShape(6.dp),
-                    modifier = Modifier.weight(1f).height(40.dp)
-                ) {
-                    Icon(Icons.Default.Share, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("SHARE JSON", color = Color.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                }
-
-                Button(
-                    onClick = onCopyJson,
-                    colors = ButtonDefaults.buttonColors(containerColor = SlateSurfaceElevated),
-                    shape = RoundedCornerShape(6.dp),
-                    modifier = Modifier.weight(1f).height(40.dp)
-                ) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = CyanTelemetry, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("COPY JSON", color = CyanTelemetry, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-                }
-            }
+            content()
         }
     }
 }

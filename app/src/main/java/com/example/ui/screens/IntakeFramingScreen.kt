@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import com.example.core.math.ComplexityResult
 import com.example.ui.TagType
 import com.example.ui.TaxonomyTag
+import com.example.ui.localization.LocalAppStrings
 import com.example.ui.components.ComplexityBadge
 import com.example.ui.theme.AmberFlame
 import com.example.ui.theme.BorderHairline
@@ -103,6 +104,7 @@ fun IntakeFramingScreen(
 ) {
     var newTagText by remember { mutableStateOf("") }
     var selectedTagType by remember { mutableStateOf(TagType.TECHNICAL_CONSTRAINT) }
+    val strings = LocalAppStrings.current
 
     val allD3Confirmed = scopeConfirmed && focusAreaConfirmed && constraintsConfirmed && goalsConfirmed
 
@@ -121,12 +123,12 @@ fun IntakeFramingScreen(
             IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = strings.back,
                     tint = TextPrimary
                 )
             }
             Text(
-                text = "D1 INTAKE ➔ D2 FRAMING ➔ D3 CONFIRMATION",
+                text = strings.intakeHeader,
                 color = TextPrimary,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
@@ -435,22 +437,22 @@ fun IntakeFramingScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     D3CheckboxRow(
-                        label = "SCOPE: Architectural perimeter & bounded contexts verified",
+                        label = strings.checkScope,
                         checked = scopeConfirmed,
                         onCheckedChange = { if (isFramingCompleted) onScopeChange(it) }
                     )
                     D3CheckboxRow(
-                        label = "FOCUS AREA: Core problem domain & trade-off focus defined",
+                        label = strings.checkFocusArea,
                         checked = focusAreaConfirmed,
                         onCheckedChange = { if (isFramingCompleted) onFocusAreaChange(it) }
                     )
                     D3CheckboxRow(
-                        label = "CONSTRAINTS: Technical & budgetary limits acknowledged",
+                        label = strings.checkConstraints,
                         checked = constraintsConfirmed,
                         onCheckedChange = { if (isFramingCompleted) onConstraintsChange(it) }
                     )
                     D3CheckboxRow(
-                        label = "GOALS: Success criteria & value alignment metrics set",
+                        label = strings.checkGoals,
                         checked = goalsConfirmed,
                         onCheckedChange = { if (isFramingCompleted) onGoalsChange(it) }
                     )
@@ -491,9 +493,9 @@ fun IntakeFramingScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = when {
-                            !isFramingCompleted -> "STEP 1: COMPLETE D2 FRAMING FIRST"
-                            !allD3Confirmed -> "STEP 2: CONFIRM D3 GATE TO UNLOCK"
-                            else -> "LAUNCH MULTI-AGENT PROTOCOL (D4-D5)"
+                            !isFramingCompleted -> "1: COMPLETE D2 FRAMING"
+                            !allD3Confirmed -> "2: CONFIRM D3 GATE"
+                            else -> strings.btnLaunchProtocol
                         },
                         color = if (canLaunch) Color.White else Color(0xFF64748B),
                         fontSize = 12.sp,

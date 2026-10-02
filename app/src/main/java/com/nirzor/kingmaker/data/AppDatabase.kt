@@ -25,7 +25,7 @@ import kotlinx.coroutines.sync.withLock
         DecisionBranchEntity::class,
         ResolutionTaskEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -64,6 +64,33 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * KingMaker v7.0: Migration from version 2 to 3.
+         * Adds canonical revision hashing, 9-D quality vector, pre-mortem, provenance mode, and outcome tracking.
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE decisions ADD COLUMN revisionNumber INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE decisions ADD COLUMN revisionHash TEXT")
+                db.execSQL("ALTER TABLE decisions ADD COLUMN qualityVectorJson TEXT")
+                db.execSQL("ALTER TABLE decisions ADD COLUMN preMortemRationale TEXT")
+                db.execSQL("ALTER TABLE decisions ADD COLUMN approvalRationale TEXT")
+                db.execSQL("ALTER TABLE decisions ADD COLUMN provenanceMode TEXT NOT NULL DEFAULT 'SIMULATED'")
+                db.execSQL("ALTER TABLE decisions ADD COLUMN policyVersion TEXT NOT NULL DEFAULT 'v7.0-personal'")
+                db.execSQL("ALTER TABLE decisions ADD COLUMN expectedOutcome TEXT")
+                db.execSQL("ALTER TABLE decisions ADD COLUMN observedOutcome TEXT")
+                db.execSQL("ALTER TABLE decisions ADD COLUMN outcomeDivergence TEXT")
+                db.execSQL("ALTER TABLE decisions ADD COLUMN outcomeReviewDate INTEGER")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_decisions_revisionHash ON decisions(revisionHash)")
+
+                db.execSQL("ALTER TABLE decision_events ADD COLUMN revisionHash TEXT")
+                db.execSQL("ALTER TABLE decision_events ADD COLUMN policyVersion TEXT NOT NULL DEFAULT 'v7.0-personal'")
+
+                db.execSQL("ALTER TABLE resolution_tasks ADD COLUMN proposedAction TEXT")
+                db.execSQL("ALTER TABLE resolution_tasks ADD COLUMN cycleHash TEXT")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val dbInstance = Room.databaseBuilder(
@@ -71,7 +98,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "kingmaker.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .fallbackToDestructiveMigrationOnDowngrade()
                     .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                     .build()
                 INSTANCE = dbInstance

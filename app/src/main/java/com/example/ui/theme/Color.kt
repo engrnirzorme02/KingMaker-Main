@@ -12,6 +12,8 @@ val BorderActive = Color(0xFF374151)
 // Accents
 val EmeraldGate = Color(0xFF10B981)        // DQS High / Approved
 val AmberFlame = Color(0xFFF59E0B)         // Caution / Devil's Advocate / Risk
+val GoldWarning = Color(0xFFFBBF24)        // Warning / What-if / T2 Boundary
+val GoldWarningContainer = Color(0xFF78350F)
 val CrimsonAlert = Color(0xFFEF4444)       // Blocked / Cycle Deadlock
 val IndigoNexus = Color(0xFF6366F1)        // Primary Action / AI Nodes
 val CyanTelemetry = Color(0xFF38BDF8)      // Technical Constraint / Fact

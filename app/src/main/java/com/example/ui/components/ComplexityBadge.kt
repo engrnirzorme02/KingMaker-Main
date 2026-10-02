@@ -13,7 +13,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -23,6 +22,10 @@ import com.example.ui.theme.CrimsonAlert
 import com.example.ui.theme.CyanTelemetry
 import com.example.ui.theme.EmeraldGate
 
+/**
+ * KingMaker v7.0 Proportionality Tier Badge (Section 8 & 56).
+ * T1 (Lightweight) | T2 (Standard) | T3 (Rigorous / Pre-Mortem)
+ */
 @Composable
 fun ComplexityBadge(
     tier: String,
@@ -30,10 +33,10 @@ fun ComplexityBadge(
     modifier: Modifier = Modifier
 ) {
     val (color, label) = when (tier.uppercase()) {
-        "MAXIMUM" -> CrimsonAlert to "MAXIMUM"
-        "RIGOROUS" -> AmberFlame to "RIGOROUS"
-        "STANDARD" -> CyanTelemetry to "STANDARD"
-        else -> EmeraldGate to "LIGHT"
+        "MAXIMUM" -> CrimsonAlert to "T3 MAXIMUM"
+        "RIGOROUS" -> AmberFlame to "T3 RIGOROUS"
+        "STANDARD" -> CyanTelemetry to "T2 STANDARD"
+        else -> EmeraldGate to "T1 LIGHT"
     }
 
     Box(
@@ -52,7 +55,7 @@ fun ComplexityBadge(
             Text(
                 text = if (score != null) "$label (${String.format("%.2f", score)})" else label,
                 color = color,
-                fontSize = 11.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace
             )

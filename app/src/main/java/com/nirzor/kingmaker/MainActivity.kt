@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,7 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.CockpitScreen
 import com.example.ui.KingMakerViewModel
-import com.example.ui.components.AppUpdateDialog
+import com.example.ui.localization.LocalAppLanguage
+import com.example.ui.localization.LocalAppStrings
+import com.example.ui.localization.getAppStrings
 import com.example.ui.screens.BlueprintStudioScreen
 import com.example.ui.screens.IntakeFramingScreen
 import com.example.ui.screens.SmartQueryModal
@@ -103,12 +106,13 @@ fun KingMakerCockpitApp(
     val cloudSyncStatus by viewModel.cloudSyncStatus.collectAsStateWithLifecycle()
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
     val apiSettings by viewModel.apiSettings.collectAsStateWithLifecycle()
-    val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
-
-    var showUpdateDialog by remember { mutableStateOf(false) }
 
     // Decisions to show: prioritize branch decisions, fallback to allDecisions if branch has none
     val displayedDecisions = if (branchDecisions.isNotEmpty()) branchDecisions else allDecisions
+
+    // Language state
+    val currentLanguage by viewModel.currentLanguage.collectAsStateWithLifecycle()
+    val strings = getAppStrings(currentLanguage)
 
     // Back handling
     BackHandler(enabled = currentScreen != CockpitScreen.VAULT_DAG) {
@@ -117,20 +121,26 @@ fun KingMakerCockpitApp(
         }
     }
 
-    when (currentScreen) {
-        CockpitScreen.VAULT_DAG -> {
-            VaultDagScreen(
-                decisions = displayedDecisions,
-                branches = branches,
-                activeBranchId = activeBranchId,
-                edges = edges,
-                selectedDecision = selectedDecision,
-                rippleHighlightedNodes = rippleHighlighted,
-                cycleDetection = cycleDetection,
-                pendingTasks = pendingTasks,
-                onSelectBranch = { branchId ->
-                    viewModel.setActiveBranch(branchId)
-                },
+    CompositionLocalProvider(
+        LocalAppLanguage provides currentLanguage,
+        LocalAppStrings provides strings
+    ) {
+        when (currentScreen) {
+            CockpitScreen.VAULT_DAG -> {
+                VaultDagScreen(
+                    decisions = displayedDecisions,
+                    branches = branches,
+                    activeBranchId = activeBranchId,
+                    edges = edges,
+                    selectedDecision = selectedDecision,
+                    rippleHighlightedNodes = rippleHighlighted,
+                    cycleDetection = cycleDetection,
+                    pendingTasks = pendingTasks,
+                    currentLanguage = currentLanguage,
+                    onSelectLanguage = { viewModel.setLanguage(it) },
+                    onSelectBranch = { branchId ->
+                        viewModel.setActiveBranch(branchId)
+                    },
                 onForkTimeline = { sourceDecisionId, branchName, title ->
                     viewModel.forkDecisionTimeline(sourceDecisionId, branchName, title)
                 },
@@ -175,10 +185,6 @@ fun KingMakerCockpitApp(
                 },
                 onTestApiConnection = { key ->
                     viewModel.testApiConnection(key)
-                },
-                updateStatus = updateStatus,
-                onOpenUpdateDialog = {
-                    showUpdateDialog = true
                 },
                 modifier = modifier
             )
@@ -296,12 +302,5 @@ fun KingMakerCockpitApp(
             }
         }
     }
-
-    if (showUpdateDialog) {
-        AppUpdateDialog(
-            updateManager = viewModel.appUpdateManager,
-            updateStatus = updateStatus,
-            onDismiss = { showUpdateDialog = false }
-        )
-    }
+}
 }

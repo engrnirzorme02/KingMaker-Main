@@ -48,6 +48,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Language
+import com.example.ui.localization.AppLanguage
+import com.example.ui.localization.LocalAppStrings
 import com.example.services.AiEngineMode
 import com.example.services.ApiSettings
 import com.example.ui.theme.AmberFlame
@@ -66,9 +70,11 @@ fun SettingsApiDialog(
     currentSettings: ApiSettings,
     onSaveSettings: (apiKey: String, endpoint: String, model: String, enabled: Boolean) -> Unit,
     onTestConnection: suspend (apiKey: String) -> Pair<Boolean, String>,
-    onOpenUpdateDialog: () -> Unit = {},
+    currentLanguage: AppLanguage = AppLanguage.BN,
+    onSelectLanguage: (AppLanguage) -> Unit = {},
     onDismiss: () -> Unit
 ) {
+    val strings = LocalAppStrings.current
     var isEnteringNewKey by remember { mutableStateOf(currentSettings.externalApiKey.isBlank()) }
     var apiKeyInput by remember { mutableStateOf("") }
     var endpoint by remember { mutableStateOf(currentSettings.customEndpoint) }
@@ -92,14 +98,14 @@ fun SettingsApiDialog(
                 Spacer(modifier = Modifier.width(8.dp))
                 Column {
                     Text(
-                        text = "AI ENGINE & API SETTINGS",
+                        text = strings.settingsDialogTitle,
                         color = TextPrimary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace
                     )
                     Text(
-                        text = "Android Keystore-Backed External API Key",
+                        text = strings.settingsDialogSubtitle,
                         color = TextMuted,
                         fontSize = 9.sp
                     )
@@ -112,6 +118,103 @@ fun SettingsApiDialog(
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
+                // Section: App Language Selector
+                Text(
+                    text = strings.settingsLanguageSection,
+                    color = CyanTelemetry,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Bengali Button (Default)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(
+                                if (currentLanguage == AppLanguage.BN) IndigoNexus.copy(alpha = 0.25f) else Color(0xFF0F172A),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .border(
+                                1.dp,
+                                if (currentLanguage == AppLanguage.BN) IndigoNexus else BorderHairline,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable { onSelectLanguage(AppLanguage.BN) }
+                            .padding(horizontal = 8.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "বাংলা",
+                                    color = TextPrimary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "ডিফল্ট (Default)",
+                                    color = EmeraldGate,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            if (currentLanguage == AppLanguage.BN) {
+                                Icon(Icons.Default.Check, contentDescription = null, tint = EmeraldGate, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    }
+
+                    // English Button
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(
+                                if (currentLanguage == AppLanguage.EN) IndigoNexus.copy(alpha = 0.25f) else Color(0xFF0F172A),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .border(
+                                1.dp,
+                                if (currentLanguage == AppLanguage.EN) IndigoNexus else BorderHairline,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable { onSelectLanguage(AppLanguage.EN) }
+                            .padding(horizontal = 8.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "English",
+                                    color = TextPrimary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "International",
+                                    color = TextMuted,
+                                    fontSize = 8.sp
+                                )
+                            }
+                            if (currentLanguage == AppLanguage.EN) {
+                                Icon(Icons.Default.Check, contentDescription = null, tint = EmeraldGate, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
                 // Active Engine Mode Banner
                 val modeLabel = when (currentSettings.activeEngineMode) {
                     AiEngineMode.EXTERNAL_KEY -> "ACTIVE: PERSONAL GEMINI KEY (SECURE KEYSTORE)"
@@ -154,8 +257,8 @@ fun SettingsApiDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Use Custom API Key", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text("Android Keystore এনক্রিপ্টেড পার্সোনাল কী", color = TextMuted, fontSize = 9.sp)
+                        Text(strings.externalApiToggle, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(strings.externalApiToggleDesc, color = TextMuted, fontSize = 9.sp)
                     }
                     Switch(
                         checked = isExternalEnabled,
@@ -319,47 +422,43 @@ fun SettingsApiDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // In-App OTA Update Shortcut Banner
+                // KingMaker v7.0 Architecture Baseline Info (Section 31 & 55.1)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(Color(0xFF0F172A), shape = RoundedCornerShape(8.dp))
-                        .border(1.dp, CyanTelemetry.copy(alpha = 0.5f), shape = RoundedCornerShape(8.dp))
-                        .clickable {
-                            onDismiss()
-                            onOpenUpdateDialog()
-                        }
+                        .border(1.dp, IndigoNexus.copy(alpha = 0.5f), shape = RoundedCornerShape(8.dp))
                         .padding(10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f, fill = false)) {
                         Icon(
-                            imageVector = Icons.Default.SystemUpdate,
+                            imageVector = Icons.Default.CheckCircle,
                             contentDescription = null,
-                            tint = CyanTelemetry,
+                            tint = EmeraldGate,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
-                                text = "IN-APP OTA UPDATER",
+                                text = "KINGMAKER v7.0 CANONICAL BASELINE",
                                 color = TextPrimary,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace
                             )
                             Text(
-                                text = "আনইন্সটল ছাড়াই সরাসরি আপডেট চেক ও ইনস্টল",
+                                text = "মানবীয় সার্বভৌমত্ব • CDR-P1 • অপরিবর্তনীয় ADR • সুরক্ষিত রিলিজ",
                                 color = TextMuted,
                                 fontSize = 9.sp
                             )
                         }
                     }
                     Text(
-                        text = "OPEN >",
-                        color = CyanTelemetry,
-                        fontSize = 9.sp,
+                        text = "v7.0",
+                        color = IndigoNexus,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace
                     )
@@ -389,7 +488,7 @@ fun SettingsApiDialog(
                         Icon(Icons.Default.Speed, contentDescription = null, tint = CyanTelemetry, modifier = Modifier.size(12.dp))
                     }
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("TEST", color = CyanTelemetry, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(strings.btnTestConnection, color = CyanTelemetry, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
 
                 // Save Button
@@ -400,13 +499,13 @@ fun SettingsApiDialog(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = IndigoNexus)
                 ) {
-                    Text("SAVE SETTINGS", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(strings.btnSaveSettings, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
             }
         },
         dismissButton = {
             OutlinedButton(onClick = onDismiss) {
-                Text("CANCEL", color = TextMuted, fontSize = 10.sp)
+                Text(strings.cancel, color = TextMuted, fontSize = 10.sp)
             }
         },
         containerColor = SlateSurfaceElevated,

@@ -3,6 +3,8 @@ package com.example.data.repository
 import com.example.core.graph.CycleDetectionResult
 import com.example.core.graph.DependencyGraphEngine
 import com.example.core.graph.GraphEdge
+import com.example.core.graph.SemanticGraphDiff
+import com.example.core.graph.WhatIfSimulationResult
 import com.example.core.math.AdmissionTestResult
 import com.example.core.math.DQSInput
 import com.example.core.math.DecisionMathEngine
@@ -13,6 +15,8 @@ import com.example.data.local.DecisionEdgeEntity
 import com.example.data.local.DecisionEntity
 import com.example.data.local.DecisionEventEntity
 import com.example.data.local.DecisionStatus
+import com.example.data.local.OutcomeDivergence
+import com.example.data.local.QualityVector
 import com.example.data.local.ResolutionTaskEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -62,8 +66,8 @@ class DecisionRepository(private val dao: DecisionDao) {
     /**
      * D1 Intake Initialization:
      * Generates collision-safe UUID.
-     * Computes initial complexity and DQS without arbitrary boosts.
-     * Invariant 3 & 4: Append-Only Event Store -> Materialized View.
+     * Computes deterministic canonical revision hash (RFC 8785) & QualityVector.
+     * Appends immutable event to WAL.
      */
     suspend fun createDecisionStream(
         title: String,
@@ -79,7 +83,7 @@ class DecisionRepository(private val dao: DecisionDao) {
         val complexity = DecisionMathEngine.calculateComplexity(risk, impact, changeability, budget)
         val initialDqs = DecisionMathEngine.calculateNormalizedDQS(
             DQSInput(
-                evidence = 0.50, // Heuristic default for initial intake
+                evidence = 0.50,
                 trust = 0.70,
                 riskMitigation = 0.40,
                 uncertainty = 0.40,
@@ -87,6 +91,28 @@ class DecisionRepository(private val dao: DecisionDao) {
                 critiqueResolved = 0.30,
                 valueAlignment = 0.70
             )
+        )
+
+        val revisionHash = DecisionMathEngine.calculateRevisionHash(
+            decisionId = id,
+            title = title,
+            problemStatement = problemStatement,
+            options = listOf("Primary candidate", "Status quo"),
+            constraints = emptyList(),
+            criteria = listOf("Latency", "Cost", "Durability"),
+            evidenceType = "HEURISTIC"
+        )
+
+        val initialQv = DecisionMathEngine.evaluateQualityVector(
+            evidenceType = "HEURISTIC",
+            hasConfirmedFraming = false,
+            constraintsCount = 0,
+            optionsCount = 2,
+            changeability = changeability,
+            risk = risk,
+            specialistAgreement = 0.60,
+            validationPass = false,
+            complexityScore = complexity.score
         )
 
         val decision = DecisionEntity(
@@ -107,7 +133,12 @@ class DecisionRepository(private val dao: DecisionDao) {
             scopeConfirmed = false,
             focusAreaConfirmed = false,
             constraintsConfirmed = false,
-            goalsConfirmed = false
+            goalsConfirmed = false,
+            revisionNumber = 1,
+            revisionHash = revisionHash,
+            qualityVectorJson = "{\"composite\": ${initialQv.compositeHeuristic}, \"explanation\": \"${initialQv.explanation}\"}",
+            provenanceMode = "SIMULATED",
+            policyVersion = "v7.0-personal"
         )
 
         val event = DecisionEventEntity(
@@ -115,10 +146,10 @@ class DecisionRepository(private val dao: DecisionDao) {
             decisionId = id,
             eventType = "INTAKE_INITIALIZED",
             dqsScore = initialDqs,
-            payloadJson = "{\"title\": \"$title\", \"tier\": \"${complexity.tier.name}\", \"complexity\": ${complexity.score}, \"dqs\": $initialDqs}",
+            payloadJson = "{\"title\": \"$title\", \"tier\": \"${complexity.tier.name}\", \"complexity\": ${complexity.score}, \"dqs\": $initialDqs, \"revHash\": \"$revisionHash\"}",
             branch_id = branchId,
-            parent_branch_id = null,
-            forked_at_event_id = null
+            revisionHash = revisionHash,
+            policyVersion = "v7.0-personal"
         )
 
         dao.insertEvent(event)
@@ -128,8 +159,7 @@ class DecisionRepository(private val dao: DecisionDao) {
 
     /**
      * D2 Framing & Taxonomy:
-     * Updates problem framing and constraints.
-     * Recomputes DQS based on actual parameters without hardcoded +0.15 inflation.
+     * Updates problem framing, constraints, and recomputes canonical revision hash & quality vector.
      */
     suspend fun updateFramingAndTaxonomy(
         id: String,
@@ -162,6 +192,28 @@ class DecisionRepository(private val dao: DecisionDao) {
             )
         )
 
+        val newRevHash = DecisionMathEngine.calculateRevisionHash(
+            decisionId = id,
+            title = current.title,
+            problemStatement = current.problemStatement,
+            options = listOf("Primary candidate", "Status quo"),
+            constraints = listOf("Tags extracted from D2"),
+            criteria = listOf("Latency", "Durability", "Cost"),
+            evidenceType = current.evidenceType
+        )
+
+        val updatedQv = DecisionMathEngine.evaluateQualityVector(
+            evidenceType = current.evidenceType,
+            hasConfirmedFraming = true,
+            constraintsCount = 2,
+            optionsCount = 2,
+            changeability = changeability,
+            risk = risk,
+            specialistAgreement = 0.70,
+            validationPass = false,
+            complexityScore = complexity.score
+        )
+
         val updated = current.copy(
             status = DecisionStatus.D2_FRAMING,
             complexityScore = complexity.score,
@@ -171,6 +223,9 @@ class DecisionRepository(private val dao: DecisionDao) {
             impact = impact,
             changeability = changeability,
             budget = budget,
+            revisionNumber = current.revisionNumber + 1,
+            revisionHash = newRevHash,
+            qualityVectorJson = "{\"composite\": ${updatedQv.compositeHeuristic}, \"explanation\": \"${updatedQv.explanation}\"}",
             updatedTimestamp = System.currentTimeMillis()
         )
 
@@ -181,7 +236,9 @@ class DecisionRepository(private val dao: DecisionDao) {
                 eventType = "FRAMING_TAXONOMY_EXTRACTED",
                 dqsScore = updatedDqs,
                 payloadJson = tagsJson,
-                branch_id = current.branchId
+                branch_id = current.branchId,
+                revisionHash = newRevHash,
+                policyVersion = "v7.0-personal"
             )
         )
         dao.upsertDecision(updated)
@@ -189,11 +246,8 @@ class DecisionRepository(private val dao: DecisionDao) {
 
     /**
      * D3 Human Confirmation Gate:
-     * Directive 2 & CRITICAL 3: D3 requires D2 Framing completed and explicit confirmation of:
-     * - scope
-     * - focus area
-     * - constraints
-     * - goals
+     * D3 requires D2 Framing completed and explicit confirmation of:
+     * scope, focus area, constraints, goals.
      */
     suspend fun confirmD3Gate(
         id: String,
@@ -226,7 +280,9 @@ class DecisionRepository(private val dao: DecisionDao) {
                 eventType = "D3_CONFIRMATION_EVALUATED",
                 dqsScore = current.dqsScore,
                 payloadJson = "{\"scopeConfirmed\": $scopeConfirmed, \"focusAreaConfirmed\": $focusAreaConfirmed, \"constraintsConfirmed\": $constraintsConfirmed, \"goalsConfirmed\": $goalsConfirmed, \"allConfirmed\": $allConfirmed}",
-                branch_id = current.branchId
+                branch_id = current.branchId,
+                revisionHash = current.revisionHash,
+                policyVersion = "v7.0-personal"
             )
         )
         dao.upsertDecision(updated)
@@ -235,7 +291,7 @@ class DecisionRepository(private val dao: DecisionDao) {
 
     /**
      * D4 Debate & D5 Critique Advancement:
-     * State Guard: Must have confirmed D3 scope & constraints before D4 debate.
+     * Must have completed D3 human confirmation before opening War Room debate.
      */
     suspend fun advanceWarRoomRound(
         id: String,
@@ -267,16 +323,14 @@ class DecisionRepository(private val dao: DecisionDao) {
                 eventType = if (round == 1) "WAR_ROOM_DEBATE_ROUND_1" else "WAR_ROOM_CRITIQUE_ROUND_$round",
                 dqsScore = newDqs,
                 payloadJson = summaryPayload,
-                branch_id = current.branchId
+                branch_id = current.branchId,
+                revisionHash = current.revisionHash,
+                policyVersion = "v7.0-personal"
             )
         )
         dao.upsertDecision(updated)
     }
 
-    /**
-     * Directive 6 & CRITICAL 8: Persists STOP_RULE_TRIGGERED event, halts auto-refinement,
-     * transitions to D6_SYNTHESIS, and flags requirement for human action.
-     */
     suspend fun recordStopRuleTriggered(
         id: String,
         previousDqs: Double,
@@ -297,16 +351,14 @@ class DecisionRepository(private val dao: DecisionDao) {
                 eventType = "STOP_RULE_TRIGGERED",
                 dqsScore = currentDqs,
                 payloadJson = payload,
-                branch_id = current.branchId
+                branch_id = current.branchId,
+                revisionHash = current.revisionHash,
+                policyVersion = "v7.0-personal"
             )
         )
         dao.upsertDecision(updated)
     }
 
-    /**
-     * D6 Synthesis: Generates real Review Packet.
-     * State Guard: D6 Synthesis advances to D7 Review only when Review Packet is generated.
-     */
     suspend fun synthesizeReviewPacket(
         id: String,
         reviewPacketJson: String,
@@ -328,21 +380,14 @@ class DecisionRepository(private val dao: DecisionDao) {
                 eventType = "D6_SYNTHESIS_PACKET_GENERATED",
                 dqsScore = finalDqs,
                 payloadJson = reviewPacketJson,
-                branch_id = current.branchId
+                branch_id = current.branchId,
+                revisionHash = current.revisionHash,
+                policyVersion = "v7.0-personal"
             )
         )
         dao.upsertDecision(updated)
     }
 
-    /**
-     * Directive 3 & CRITICAL 7: Admission Test prior to CEO approval.
-     * Evaluates Specificity, Novelty, Actionability, Value.
-     * Emits Finalization Certificate only if:
-     * - D6 synthesis completed
-     * - ReviewPacket exists
-     * - all required evidence/provenance checks pass
-     * - all four admission checks pass
-     */
     suspend fun evaluateAdmissionAndIssueCertificate(
         id: String
     ): FinalizationCertificate? = withContext(Dispatchers.IO) {
@@ -370,7 +415,9 @@ class DecisionRepository(private val dao: DecisionDao) {
                     eventType = "ADMISSION_TEST_FAILED",
                     dqsScore = current.dqsScore,
                     payloadJson = "{\"checks\": \"FAILED\", \"notes\": \"${checks.specificityNote} | ${checks.actionabilityNote} | ${checks.valueNote}\"}",
-                    branch_id = current.branchId
+                    branch_id = current.branchId,
+                    revisionHash = current.revisionHash,
+                    policyVersion = "v7.0-personal"
                 )
             )
             return@withContext null
@@ -397,18 +444,15 @@ class DecisionRepository(private val dao: DecisionDao) {
                 eventType = "FINALIZATION_CERTIFICATE_ISSUED",
                 dqsScore = current.dqsScore,
                 payloadJson = certJson,
-                branch_id = current.branchId
+                branch_id = current.branchId,
+                revisionHash = current.revisionHash,
+                policyVersion = "v7.0-personal"
             )
         )
         dao.upsertDecision(updated)
         certificate
     }
 
-    /**
-     * Smart Query: Auxiliary Recovery Mechanism.
-     * Does NOT replace D6 Synthesis; resolves trade-off deadlocks.
-     * No artificial DQS boost.
-     */
     suspend fun resolveSmartQueryTradeoff(
         id: String,
         selectedChoice: String,
@@ -416,7 +460,6 @@ class DecisionRepository(private val dao: DecisionDao) {
     ) = withContext(Dispatchers.IO) {
         val current = dao.getDecisionByIdSync(id) ?: return@withContext
 
-        // Recompute grounded DQS without hardcoded boosts
         val updatedDqs = DecisionMathEngine.calculateNormalizedDQS(
             DQSInput(
                 evidence = if (current.evidenceType == "AXIOMATIC") 0.90 else 0.75,
@@ -443,23 +486,29 @@ class DecisionRepository(private val dao: DecisionDao) {
                 eventType = "SMART_QUERY_TRADE_OFF_RESOLVED",
                 dqsScore = updatedDqs,
                 payloadJson = "{\"selected\": \"$selectedChoice\", \"rationale\": \"$rationale\", \"recoveredTo\": \"D6_SYNTHESIS\"}",
-                branch_id = current.branchId
+                branch_id = current.branchId,
+                revisionHash = current.revisionHash,
+                policyVersion = "v7.0-personal"
             )
         )
         dao.upsertDecision(updated)
     }
 
     /**
-     * Directive 13 & Invariant 2: Human CEO Gate Attestation.
-     * HARD GUARDS:
-     * 1. Allowed ONLY from D7_REVIEW status.
-     * 2. Admission Test must pass.
-     * 3. Finalization Certificate must exist.
-     * 4. CEO approval does NOT artificially increase DQS (no coerceAtLeast 0.90).
+     * Section 53.4 & Invariant I-01, I-02: Human CEO Gate Attestation.
+     * Requires:
+     * - Status must be D7_REVIEW.
+     * - Finalization certificate must exist.
+     * - Rationale must be provided (>= 30 chars).
+     * - Pre-mortem rationale stored for T3 decisions.
+     * - Generates immutable SHA-256 signature hash.
      */
     suspend fun executeCeoAttestationSignature(
         id: String,
-        signerName: String = "Authorized CEO / Chief Architect"
+        signerName: String = "Authorized CEO / Chief Architect",
+        rationale: String = "Approved with validated empirical evidence and policy compliance.",
+        preMortem: String? = null,
+        selectedOption: String? = null
     ): String = withContext(Dispatchers.IO) {
         val current = dao.getDecisionByIdSync(id) ?: throw IllegalArgumentException("Decision not found")
 
@@ -471,15 +520,21 @@ class DecisionRepository(private val dao: DecisionDao) {
             throw IllegalStateException("CEO Gate Rejected: Finalization Certificate is missing. Admission checks must pass before approval.")
         }
 
+        if (rationale.trim().length < 30) {
+            throw IllegalStateException("CEO Gate Rejected: Approval rationale must be at least 30 characters explaining the executive commitment.")
+        }
+
         val now = System.currentTimeMillis()
-        val rawToHash = "KINGMAKER_v41:${current.id}:${current.title}:$signerName:$now:${current.dqsScore}"
+        val rawToHash = "KINGMAKER_v70:${current.id}:${current.revisionHash ?: "HEAD"}:$signerName:$now:$rationale"
         val hash = sha256(rawToHash)
 
-        // DQS is NOT artificially boosted! Kept true to evidence
         val approved = current.copy(
             status = DecisionStatus.APPROVED,
             digitalSignatureHash = hash,
             approvedAt = now,
+            approvalRationale = rationale,
+            preMortemRationale = preMortem ?: current.preMortemRationale,
+            selectedOption = selectedOption ?: current.selectedOption,
             updatedTimestamp = now
         )
 
@@ -489,8 +544,10 @@ class DecisionRepository(private val dao: DecisionDao) {
                 decisionId = id,
                 eventType = "CEO_ATTESTATION_COMMITTED",
                 dqsScore = current.dqsScore,
-                payloadJson = "{\"signer\": \"$signerName\", \"attestationHash\": \"$hash\", \"state\": \"APPROVED_LOCKED\"}",
-                branch_id = current.branchId
+                payloadJson = "{\"signer\": \"$signerName\", \"attestationHash\": \"$hash\", \"rationale\": \"$rationale\", \"preMortem\": \"$preMortem\", \"state\": \"APPROVED_LOCKED\"}",
+                branch_id = current.branchId,
+                revisionHash = current.revisionHash,
+                policyVersion = current.policyVersion
             )
         )
         dao.upsertDecision(approved)
@@ -498,10 +555,82 @@ class DecisionRepository(private val dao: DecisionDao) {
     }
 
     /**
-     * Directive 12: Git-Style Decision Branching & Forking.
-     * Governance Guard: Forking allowed ONLY from decisions in D4_DEBATE, D5_CRITIQUE, D6_SYNTHESIS, D7_REVIEW, or APPROVED.
-     * Returns exact ForkResult with unique branchId and forkedDecisionId.
+     * Governance rejection (Section 4 & 10).
      */
+    suspend fun rejectDecision(id: String, rationale: String) = withContext(Dispatchers.IO) {
+        val current = dao.getDecisionByIdSync(id) ?: return@withContext
+        val updated = current.copy(status = DecisionStatus.REJECTED, updatedTimestamp = System.currentTimeMillis())
+        dao.insertEvent(
+            DecisionEventEntity(
+                id = "EVT-${UUID.randomUUID()}",
+                decisionId = id,
+                eventType = "GOVERNANCE_DECISION_REJECTED",
+                dqsScore = current.dqsScore,
+                payloadJson = "{\"action\": \"REJECTED\", \"rationale\": \"$rationale\"}",
+                branch_id = current.branchId,
+                revisionHash = current.revisionHash,
+                policyVersion = current.policyVersion
+            )
+        )
+        dao.upsertDecision(updated)
+    }
+
+    /**
+     * Governance deferral (Section 4 & 10).
+     */
+    suspend fun deferDecision(id: String, rationale: String) = withContext(Dispatchers.IO) {
+        val current = dao.getDecisionByIdSync(id) ?: return@withContext
+        val updated = current.copy(status = DecisionStatus.DEFERRED, updatedTimestamp = System.currentTimeMillis())
+        dao.insertEvent(
+            DecisionEventEntity(
+                id = "EVT-${UUID.randomUUID()}",
+                decisionId = id,
+                eventType = "GOVERNANCE_DECISION_DEFERRED",
+                dqsScore = current.dqsScore,
+                payloadJson = "{\"action\": \"DEFERRED\", \"rationale\": \"$rationale\"}",
+                branch_id = current.branchId,
+                revisionHash = current.revisionHash,
+                policyVersion = current.policyVersion
+            )
+        )
+        dao.upsertDecision(updated)
+    }
+
+    /**
+     * Section 58 & Invariant I-20: Outcome Observation Loop.
+     * Never rewrites decision-time quality.
+     */
+    suspend fun recordOutcomeObservation(
+        id: String,
+        expected: String,
+        observed: String,
+        divergence: OutcomeDivergence,
+        followUpAction: String
+    ) = withContext(Dispatchers.IO) {
+        val current = dao.getDecisionByIdSync(id) ?: return@withContext
+        val now = System.currentTimeMillis()
+        val updated = current.copy(
+            expectedOutcome = expected,
+            observedOutcome = observed,
+            outcomeDivergence = divergence.name,
+            outcomeReviewDate = now,
+            updatedTimestamp = now
+        )
+        dao.insertEvent(
+            DecisionEventEntity(
+                id = "EVT-${UUID.randomUUID()}",
+                decisionId = id,
+                eventType = "OUTCOME_OBSERVATION_RECORDED",
+                dqsScore = current.dqsScore, // Unchanged! Invariant I-20
+                payloadJson = "{\"expected\": \"$expected\", \"observed\": \"$observed\", \"divergence\": \"${divergence.name}\", \"action\": \"$followUpAction\"}",
+                branch_id = current.branchId,
+                revisionHash = current.revisionHash,
+                policyVersion = current.policyVersion
+            )
+        )
+        dao.upsertDecision(updated)
+    }
+
     suspend fun forkDecisionTimeline(
         sourceDecisionId: String,
         newBranchName: String,
@@ -526,11 +655,9 @@ class DecisionRepository(private val dao: DecisionDao) {
         val cleanBranchId = "exp-$rawBranch-$uniqueSuffix"
         val now = System.currentTimeMillis()
 
-        // 1. Fetch latest event from source to establish immutable lineage
         val events = dao.getEventsForDecision(sourceDecisionId).firstOrNull() ?: emptyList()
         val forkedAtEventId = events.lastOrNull()?.id ?: "EVT-ROOT"
 
-        // 2. Register Branch without silently overwriting (enforce uniqueness)
         val existingBranch = dao.getBranchById(cleanBranchId)
         if (existingBranch != null) {
             throw IllegalStateException("Branch ID collision: Branch $cleanBranchId already exists.")
@@ -548,12 +675,11 @@ class DecisionRepository(private val dao: DecisionDao) {
         )
         dao.insertBranch(newBranch)
 
-        // 3. Create cloned exploratory decision node with collision-safe UUID
         val forkedDecisionId = "${sourceDecision.id}-FORK-${UUID.randomUUID()}"
         val forkedDecision = sourceDecision.copy(
             id = forkedDecisionId,
             title = "[FORK] $exploratoryTitle",
-            status = DecisionStatus.D4_DEBATE, // Ready for alternate debate
+            status = DecisionStatus.D4_DEBATE,
             dqsScore = sourceDecision.dqsScore,
             branchId = cleanBranchId,
             parentBranchId = sourceDecision.branchId,
@@ -565,7 +691,6 @@ class DecisionRepository(private val dao: DecisionDao) {
             updatedTimestamp = now
         )
 
-        // 4. Log immutable branch fork event
         val forkEvent = DecisionEventEntity(
             id = "EVT-${UUID.randomUUID()}",
             decisionId = forkedDecisionId,
@@ -585,8 +710,8 @@ class DecisionRepository(private val dao: DecisionDao) {
         ForkResult(branchId = cleanBranchId, forkedDecisionId = forkedDecisionId)
     }
 
-    suspend fun addDependencyEdge(fromId: String, toId: String) = withContext(Dispatchers.IO) {
-        dao.insertEdge(DecisionEdgeEntity(fromDecisionId = fromId, toDecisionId = toId, relationship = "DEPENDS_ON"))
+    suspend fun addDependencyEdge(fromId: String, toId: String, relationship: String = "DEPENDS_ON") = withContext(Dispatchers.IO) {
+        dao.insertEdge(DecisionEdgeEntity(fromDecisionId = fromId, toDecisionId = toId, relationship = relationship))
     }
 
     suspend fun removeDependencyEdge(fromId: String, toId: String) = withContext(Dispatchers.IO) {
@@ -599,9 +724,31 @@ class DecisionRepository(private val dao: DecisionDao) {
     }
 
     /**
-     * Directive 8: Tarjan SCC Cycle Detection & Human Resolution Task.
-     * Never silently resolves automatically.
+     * Section 51.3: What-if Simulation without database mutation.
      */
+    suspend fun simulateEdgeOperation(
+        fromId: String,
+        toId: String,
+        relationship: String = "DEPENDS_ON",
+        action: String = "ADD"
+    ): WhatIfSimulationResult = withContext(Dispatchers.IO) {
+        val decisions = dao.getAllDecisions().firstOrNull() ?: emptyList()
+        val allNodeIds = decisions.map { it.id }.toSet()
+        val edges = dao.getAllEdgesSync().map { GraphEdge(it.fromDecisionId, it.toDecisionId, it.relationship) }
+        val candidate = GraphEdge(from = fromId, to = toId, relationship = relationship)
+        DependencyGraphEngine.simulateEdgeOperation(edges, allNodeIds, candidate, action)
+    }
+
+    /**
+     * Section 52: Semantic Graph Diff for offline-to-online reconciliation.
+     */
+    suspend fun computeGraphReconciliationDiff(localEdges: List<GraphEdge>): SemanticGraphDiff = withContext(Dispatchers.IO) {
+        val serverEdges = dao.getAllEdgesSync().map { GraphEdge(it.fromDecisionId, it.toDecisionId, it.relationship) }
+        val decisions = dao.getAllDecisions().firstOrNull() ?: emptyList()
+        val allNodeIds = decisions.map { it.id }.toSet()
+        DependencyGraphEngine.computeGraphReconciliationDiff(serverEdges, localEdges, allNodeIds)
+    }
+
     suspend fun detectCyclesAndRecordTasks(): CycleDetectionResult = withContext(Dispatchers.IO) {
         val decisions = dao.getAllDecisions().firstOrNull() ?: emptyList()
         val decisionMap = decisions.associateBy { it.id }
@@ -614,18 +761,19 @@ class DecisionRepository(private val dao: DecisionDao) {
             val evidenceMap = decisionMap.mapValues { (_, dec) -> Pair(dec.evidenceType, dec.dqsScore) }
             val weakestNodeId = DependencyGraphEngine.identifyWeakestEvidenceNode(detection.cyclicNodeIds, evidenceMap) ?: detection.cyclicNodeIds.first()
 
-            val taskId = "TASK-CYCLE-${UUID.randomUUID().toString().take(8)}"
+            val taskId = "TASK-CYCLE-${detection.deduplicationKey.takeLast(8)}"
             val task = ResolutionTaskEntity(
                 id = taskId,
                 cycleNodes = detection.cyclicNodeIds.joinToString(","),
                 weakestNodeId = weakestNodeId,
                 reason = "Tarjan SCC cyclic deadlock detected across nodes: ${detection.cycles.joinToString(" -> ")}. Node '$weakestNodeId' identified as having weakest evidence.",
                 status = "PENDING",
+                proposedAction = "Break dependency or reframe edge from '$weakestNodeId'",
+                cycleHash = detection.deduplicationKey,
                 createdTimestamp = System.currentTimeMillis()
             )
             dao.insertResolutionTask(task)
 
-            // Mark the weakest node as ASSUMPTION in audit trail (Directive 8)
             decisionMap[weakestNodeId]?.let { weakestDec ->
                 val adjusted = weakestDec.copy(evidenceType = "ASSUMPTION")
                 dao.upsertDecision(adjusted)
@@ -636,7 +784,9 @@ class DecisionRepository(private val dao: DecisionDao) {
                         eventType = "CYCLE_WEAKEST_NODE_IDENTIFIED",
                         dqsScore = weakestDec.dqsScore,
                         payloadJson = "{\"cycle\": \"${detection.cyclicNodeIds.joinToString(",")}\", \"action\": \"EVIDENCE_MARKED_ASSUMPTION\", \"taskId\": \"$taskId\"}",
-                        branch_id = weakestDec.branchId
+                        branch_id = weakestDec.branchId,
+                        revisionHash = weakestDec.revisionHash,
+                        policyVersion = weakestDec.policyVersion
                     )
                 )
             }

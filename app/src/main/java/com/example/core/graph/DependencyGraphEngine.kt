@@ -1,5 +1,7 @@
 package com.example.core.graph
 
+import com.example.data.local.ConflictClass
+import java.security.MessageDigest
 import kotlin.math.max
 import kotlin.math.min
 
@@ -12,7 +14,8 @@ data class GraphEdge(
 data class CycleDetectionResult(
     val hasCycle: Boolean,
     val cyclicNodeIds: Set<String>,
-    val cycles: List<List<String>>
+    val cycles: List<List<String>>,
+    val deduplicationKey: String = ""
 )
 
 data class TopologicalNodeCoordinate(
@@ -24,33 +27,64 @@ data class TopologicalNodeCoordinate(
     val normalizedY: Float  // 0.0 to 1.0
 )
 
+/**
+ * Section 12 & 51.3: What-if Simulation Result.
+ * Computes projected graph changes without mutating authoritative state.
+ */
+data class WhatIfSimulationResult(
+    val candidateEdge: GraphEdge,
+    val action: String, // ADD or REMOVE
+    val introducesCycle: Boolean,
+    val resolvesCycle: Boolean,
+    val affectedNodes: Set<String>,
+    val projectedGraphHash: String,
+    val summary: String
+)
+
+/**
+ * Section 52: Semantic Graph Diff for Reconciliation Sandbox.
+ */
+data class SemanticGraphDiff(
+    val nonOverlappingEdges: List<GraphEdge>,
+    val conflictingEdges: List<Pair<GraphEdge, String>>, // (edge, conflictReason)
+    val conflictClass: ConflictClass,
+    val affectedNodeIds: Set<String>,
+    val requiresManualReconciliation: Boolean,
+    val reconciliationExplanation: String
+)
+
 class DependencyGraphEngine {
     companion object {
+
         /**
-         * Directive 9: Ripple Effect Semantics.
+         * Calculates SHA-256 hash of graph topology.
+         */
+        fun calculateGraphHash(edges: List<GraphEdge>): String {
+            val serialized = edges.map { "${it.from}->${it.relationship}->${it.to}" }
+                .sorted()
+                .joinToString(";")
+            val md = MessageDigest.getInstance("SHA-256")
+            val digest = md.digest(serialized.toByteArray(Charsets.UTF_8))
+            return digest.joinToString("") { "%02x".format(it) }
+        }
+
+        /**
+         * Ripple Effect Semantics:
          * If A DEPENDS_ON B (where edge.from = A, edge.to = B),
          * then changing prerequisite B directly and transitively affects dependent A.
-         *
-         * Traversal follows dependency semantics:
-         * For DEPENDS_ON edges: when B changes, traverse to all A that depend on B.
-         * For FORKED_TO edges: when root changes, traverse to fork descendants.
          */
         fun calculateRippleEffect(changedNodeId: String, edges: List<GraphEdge>): List<String> {
-            // Build dependency mapping: prerequisite -> list of dependents
             val dependentsMap = mutableMapOf<String, MutableList<String>>()
 
             edges.forEach { edge ->
                 when (edge.relationship) {
-                    "DEPENDS_ON" -> {
-                        // edge.from depends on edge.to -> when edge.to changes, edge.from is affected
+                    "DEPENDS_ON", "CONSTRAINS", "AFFECTS" -> {
                         dependentsMap.getOrPut(edge.to) { mutableListOf() }.add(edge.from)
                     }
-                    "FORKED_TO" -> {
-                        // edge.to was forked from edge.from -> when edge.from changes, edge.to is affected
+                    "FORKED_TO", "DERIVED_FROM", "SUPERSEDES" -> {
                         dependentsMap.getOrPut(edge.from) { mutableListOf() }.add(edge.to)
                     }
                     else -> {
-                        // Default fallback
                         dependentsMap.getOrPut(edge.to) { mutableListOf() }.add(edge.from)
                     }
                 }
@@ -73,10 +107,10 @@ class DependencyGraphEngine {
         }
 
         /**
-         * Tarjan's Strongly Connected Components (SCC) Cycle Detection.
-         * Identifies cycles / deadlocks in the dependency graph.
+         * Tarjan's Strongly Connected Components (SCC) Cycle Detection (Section 12 & 51).
+         * Generates deduplicationKey: revisionHash + sorted(nodeIds) + sorted(cycleEdges).
          */
-        fun detectCycles(allNodeIds: Set<String>, edges: List<GraphEdge>): CycleDetectionResult {
+        fun detectCycles(allNodeIds: Set<String>, edges: List<GraphEdge>, revisionHash: String = "HEAD"): CycleDetectionResult {
             val adjacency = mutableMapOf<String, MutableList<String>>()
             allNodeIds.forEach { adjacency[it] = mutableListOf() }
             edges.forEach { edge ->
@@ -128,21 +162,23 @@ class DependencyGraphEngine {
             }
 
             val cyclicNodes = sccs.flatten().toSet()
+            val sortedNodeStr = cyclicNodes.sorted().joinToString(",")
+            val dedupKey = "$revisionHash:$sortedNodeStr"
+
             return CycleDetectionResult(
                 hasCycle = cyclicNodes.isNotEmpty(),
                 cyclicNodeIds = cyclicNodes,
-                cycles = sccs
+                cycles = sccs,
+                deduplicationKey = dedupKey
             )
         }
 
         /**
-         * Directive 8: Identify weakest-evidence node in cyclic dependencies.
-         * Hierarchy: UNVERIFIED (1) < ASSUMPTION (2) < HEURISTIC (3) < EMPIRICAL (4) < AXIOMATIC (5).
-         * Lowest score breaks ties.
+         * Identifies weakest-evidence node in cyclic dependencies.
          */
         fun identifyWeakestEvidenceNode(
             cyclicNodeIds: Set<String>,
-            nodeEvidenceMap: Map<String, Pair<String, Double>> // nodeId -> (evidenceType, dqsScore)
+            nodeEvidenceMap: Map<String, Pair<String, Double>>
         ): String? {
             if (cyclicNodeIds.isEmpty()) return null
 
@@ -160,6 +196,109 @@ class DependencyGraphEngine {
                 val weight = evidenceWeight(evidenceType)
                 weight * 10.0 + dqs
             }
+        }
+
+        /**
+         * Section 51.3: What-if Simulation.
+         * Evaluates effect of candidate edge change without mutating authoritative graph.
+         */
+        fun simulateEdgeOperation(
+            currentEdges: List<GraphEdge>,
+            allNodeIds: Set<String>,
+            candidateEdge: GraphEdge,
+            action: String // "ADD" or "REMOVE"
+        ): WhatIfSimulationResult {
+            val simulatedEdges = if (action == "ADD") {
+                if (currentEdges.any { it.from == candidateEdge.from && it.to == candidateEdge.to }) {
+                    currentEdges
+                } else {
+                    currentEdges + candidateEdge
+                }
+            } else {
+                currentEdges.filterNot { it.from == candidateEdge.from && it.to == candidateEdge.to }
+            }
+
+            val baselineCycle = detectCycles(allNodeIds, currentEdges)
+            val simulatedCycle = detectCycles(allNodeIds, simulatedEdges)
+
+            val introducesCycle = !baselineCycle.hasCycle && simulatedCycle.hasCycle
+            val resolvesCycle = baselineCycle.hasCycle && !simulatedCycle.hasCycle
+
+            val affectedNodes = calculateRippleEffect(candidateEdge.from, simulatedEdges).toSet() + candidateEdge.from + candidateEdge.to
+            val projectedHash = calculateGraphHash(simulatedEdges)
+
+            val summary = when {
+                resolvesCycle -> "Simulated $action successfully resolves circular deadlock! Dependency graph restored to clean DAG."
+                introducesCycle -> "WARNING: Simulated $action introduces a circular dependency cycle between ${simulatedCycle.cyclicNodeIds}!"
+                action == "ADD" -> "Simulated ADD: Links '${candidateEdge.from}' -> '${candidateEdge.to}' (${candidateEdge.relationship}). Touches ${affectedNodes.size} nodes."
+                else -> "Simulated REMOVE: Cuts link between '${candidateEdge.from}' and '${candidateEdge.to}'. Touches ${affectedNodes.size} nodes."
+            }
+
+            return WhatIfSimulationResult(
+                candidateEdge = candidateEdge,
+                action = action,
+                introducesCycle = introducesCycle,
+                resolvesCycle = resolvesCycle,
+                affectedNodes = affectedNodes,
+                projectedGraphHash = projectedHash,
+                summary = summary
+            )
+        }
+
+        /**
+         * Section 52: Semantic Graph Diff for Offline-to-Online Reconciliation.
+         */
+        fun computeGraphReconciliationDiff(
+            serverEdges: List<GraphEdge>,
+            localEdges: List<GraphEdge>,
+            allNodeIds: Set<String>
+        ): SemanticGraphDiff {
+            val serverEdgeSet = serverEdges.toSet()
+            val localEdgeSet = localEdges.toSet()
+
+            val nonOverlapping = localEdges.filter { it !in serverEdgeSet }
+            val conflicting = mutableListOf<Pair<GraphEdge, String>>()
+
+            nonOverlapping.forEach { edge ->
+                // Check if reverse edge exists on server (creating mutual loop)
+                val reverseOnServer = serverEdges.find { it.from == edge.to && it.to == edge.from }
+                if (reverseOnServer != null) {
+                    conflicting.add(Pair(edge, "Creates immediate circular conflict with Server edge (${reverseOnServer.from} -> ${reverseOnServer.to})"))
+                }
+            }
+
+            val mergedCandidate = (serverEdges + nonOverlapping.filter { edge ->
+                conflicting.none { it.first == edge }
+            }).distinct()
+
+            val cycleCheck = detectCycles(allNodeIds, mergedCandidate)
+
+            val conflictClass = when {
+                cycleCheck.hasCycle -> ConflictClass.CYCLE_CONFLICT
+                conflicting.isNotEmpty() -> ConflictClass.SAME_EDGE_CONFLICT
+                nonOverlapping.isNotEmpty() -> ConflictClass.NON_OVERLAPPING
+                else -> ConflictClass.NON_OVERLAPPING
+            }
+
+            val requiresManual = conflictClass != ConflictClass.NON_OVERLAPPING
+
+            val explanation = when (conflictClass) {
+                ConflictClass.NON_OVERLAPPING -> "All local graph operations are non-overlapping with server state. Safe to merge automatically into draft."
+                ConflictClass.CYCLE_CONFLICT -> "Merge candidate introduces an illegal cycle! Human Guided Resolution Task required."
+                ConflictClass.SAME_EDGE_CONFLICT -> "Conflicting edge mutations detected between local outbox and server graph."
+                else -> "Reconciliation required before sealing new revision."
+            }
+
+            val affected = nonOverlapping.flatMap { listOf(it.from, it.to) }.toSet()
+
+            return SemanticGraphDiff(
+                nonOverlappingEdges = nonOverlapping,
+                conflictingEdges = conflicting,
+                conflictClass = conflictClass,
+                affectedNodeIds = affected,
+                requiresManualReconciliation = requiresManual,
+                reconciliationExplanation = explanation
+            )
         }
 
         /**

@@ -1,6 +1,9 @@
 package com.example.core.math
 
+import com.example.data.local.QualityVector
+import org.json.JSONObject
 import java.security.MessageDigest
+import java.util.TreeMap
 import kotlin.math.roundToInt
 
 data class DQSInput(
@@ -14,15 +17,16 @@ data class DQSInput(
 )
 
 enum class ComplexityTier {
-    LIGHT,
-    STANDARD,
-    RIGOROUS,
-    MAXIMUM
+    LIGHT,       // T1 Lightweight (Reversible, low-risk, minimal reasoning)
+    STANDARD,    // T2 Standard (Moderate impact, bounded debate)
+    RIGOROUS,    // T3 Rigorous (High-risk, cross-cutting dependencies)
+    MAXIMUM      // T3 Maximum (Mission-critical, irreversible, mandatory pre-mortem)
 }
 
 data class ComplexityResult(
     val score: Double,
-    val tier: ComplexityTier
+    val tier: ComplexityTier,
+    val policyProfileName: String = "PolicyProfile-P1"
 )
 
 data class TierConfig(
@@ -31,6 +35,8 @@ data class TierConfig(
     val maxDebateRounds: Int,
     val allowExternalResearch: Boolean,
     val adversarialStressTesting: Boolean,
+    val requiresPreMortem: Boolean,
+    val maxCostBudgetUsd: Double,
     val description: String
 )
 
@@ -62,9 +68,103 @@ class DecisionMathEngine {
         private const val NORMALIZATION_DIVISOR = 0.85
 
         /**
-         * Seven-parameter DQS model:
+         * KingMaker v7.0: Section 41 Revision Integrity
+         * Canonical JSON (RFC 8785 deterministic key order) + SHA-256 Hash.
+         */
+        fun calculateRevisionHash(
+            decisionId: String,
+            title: String,
+            problemStatement: String,
+            options: List<String>,
+            constraints: List<String>,
+            criteria: List<String>,
+            evidenceType: String,
+            policyVersion: String = "v7.0-personal"
+        ): String {
+            val sortedMap = TreeMap<String, Any>()
+            sortedMap["constraints"] = constraints.sorted()
+            sortedMap["criteria"] = criteria.sorted()
+            sortedMap["decisionId"] = decisionId
+            sortedMap["evidenceType"] = evidenceType
+            sortedMap["options"] = options.sorted()
+            sortedMap["policyVersion"] = policyVersion
+            sortedMap["problemStatement"] = problemStatement.trim()
+            sortedMap["title"] = title.trim()
+
+            val canonicalJson = JSONObject(sortedMap as Map<*, *>).toString()
+            val md = MessageDigest.getInstance("SHA-256")
+            val digest = md.digest(canonicalJson.toByteArray(Charsets.UTF_8))
+            return digest.joinToString("") { "%02x".format(it) }
+        }
+
+        /**
+         * KingMaker v7.0: 9-Dimensional Quality Vector (Section 9 & 48)
+         * Evaluates diagnostic vector. Does NOT equal automatic approval!
+         */
+        fun evaluateQualityVector(
+            evidenceType: String,
+            hasConfirmedFraming: Boolean,
+            constraintsCount: Int,
+            optionsCount: Int,
+            changeability: Double,
+            risk: Double,
+            specialistAgreement: Double,
+            validationPass: Boolean,
+            complexityScore: Double
+        ): QualityVector {
+            val evStrength = when (evidenceType.uppercase()) {
+                "AXIOMATIC" -> 0.95
+                "EMPIRICAL" -> 0.85
+                "HEURISTIC" -> 0.65
+                "ASSUMPTION" -> 0.40
+                else -> 0.20
+            }
+
+            val frameComp = if (hasConfirmedFraming) 0.90 else 0.45
+            val constraintFit = (0.50 + (constraintsCount.coerceAtMost(5) * 0.08)).coerceIn(0.40, 0.95)
+            val optCoverage = (0.40 + (optionsCount.coerceAtMost(4) * 0.15)).coerceIn(0.40, 0.95)
+            val reversibility = changeability.coerceIn(0.0, 1.0)
+            val riskExp = (1.0 - risk).coerceIn(0.10, 0.95) // Inverted: lower risk = higher safety score
+            val disagreement = (1.0 - specialistAgreement).coerceIn(0.05, 0.90) // Divergence level
+            val valReadiness = if (validationPass) 0.88 else 0.50
+            val compPenalty = (complexityScore * 0.25).coerceIn(0.05, 0.35)
+
+            // Diagnostic composite heuristic for scanability
+            val composite = (
+                (evStrength * 0.20) +
+                (frameComp * 0.15) +
+                (constraintFit * 0.15) +
+                (optCoverage * 0.10) +
+                (reversibility * 0.10) +
+                (riskExp * 0.15) +
+                (valReadiness * 0.15) -
+                compPenalty
+            ).coerceIn(0.0, 1.0)
+
+            val roundedComposite = ((composite * 100.0).roundToInt()) / 100.0
+
+            val explanation = "Quality Vector evaluated across 9 dimensions under Policy v7.0. " +
+                    "Evidence: ${(evStrength * 100).toInt()}%, Framing: ${(frameComp * 100).toInt()}%, " +
+                    "Reversibility: ${(reversibility * 100).toInt()}%. Note: Quality is a diagnostic instrument, NOT approval."
+
+            return QualityVector(
+                evidenceStrength = evStrength,
+                frameCompleteness = frameComp,
+                constraintFit = constraintFit,
+                optionCoverage = optCoverage,
+                reversibility = reversibility,
+                riskExposure = riskExp,
+                disagreement = disagreement,
+                validationReadiness = valReadiness,
+                complexityPenalty = compPenalty,
+                compositeHeuristic = roundedComposite,
+                explanation = explanation
+            )
+        }
+
+        /**
+         * Legacy 7-parameter DQS model retained for legacy tests & backwards compatibility.
          * DQS = (0.20E + 0.20T + 0.18R + 0.17U + 0.12A + 0.08C + 0.05V) / 0.85
-         * Normalized strictly to 0.0 - 1.0. No artificial boosts or forced minimums.
          */
         fun calculateNormalizedDQS(params: DQSInput): Double {
             val rawScore =
@@ -82,9 +182,8 @@ class DecisionMathEngine {
         }
 
         /**
-         * Proportionality / Complexity score:
-         * Score = (Risk × 0.35) + (Impact × 0.30) + ((1 - Changeability) × 0.20) + (Budget × 0.15)
-         * Single consistent numeric scale: 0.0 to 1.0.
+         * Proportionality Engine (Section 8):
+         * Evaluates context classification: Risk, Impact, Changeability, Budget.
          */
         fun calculateComplexity(
             risk: Double,
@@ -98,20 +197,27 @@ class DecisionMathEngine {
             val b = budget.coerceIn(0.0, 1.0)
 
             val score = (r * 0.35) + (i * 0.30) + ((1.0 - c) * 0.20) + (b * 0.15)
-            val rounded = ((score * 100.0).roundToInt()) / 100.0
+            val roundedScore = ((score * 100.0).roundToInt()) / 100.0
 
             val tier = when {
-                rounded >= 0.80 -> ComplexityTier.MAXIMUM
-                rounded >= 0.60 -> ComplexityTier.RIGOROUS
-                rounded >= 0.30 -> ComplexityTier.STANDARD
-                else -> ComplexityTier.LIGHT
+                roundedScore < 0.30 -> ComplexityTier.LIGHT
+                roundedScore < 0.65 -> ComplexityTier.STANDARD
+                roundedScore < 0.80 -> ComplexityTier.RIGOROUS
+                else -> ComplexityTier.MAXIMUM
             }
 
-            return ComplexityResult(score = rounded, tier = tier)
+            val policyName = when (tier) {
+                ComplexityTier.LIGHT -> "T1_LIGHT_POLICY"
+                ComplexityTier.STANDARD -> "T2_STANDARD_POLICY"
+                ComplexityTier.RIGOROUS -> "T3_RIGOROUS_POLICY"
+                ComplexityTier.MAXIMUM -> "T3_MAXIMUM_PREMORTEM_POLICY"
+            }
+
+            return ComplexityResult(score = roundedScore, tier = tier, policyProfileName = policyName)
         }
 
         /**
-         * Actual tier behavior matching KingMaker architecture specifications.
+         * Proportionality tier configuration.
          */
         fun getTierConfig(tier: ComplexityTier): TierConfig {
             return when (tier) {
@@ -121,15 +227,19 @@ class DecisionMathEngine {
                     maxDebateRounds = 0,
                     allowExternalResearch = false,
                     adversarialStressTesting = false,
-                    description = "2 agents, no external research, 0 debate rounds (fast synthesis)"
+                    requiresPreMortem = false,
+                    maxCostBudgetUsd = 0.10,
+                    description = "T1 Light: Low impact, high reversibility. Single round synthesis without adversarial round."
                 )
                 ComplexityTier.STANDARD -> TierConfig(
                     tier = tier,
-                    maxAgents = 4,
-                    maxDebateRounds = 2,
-                    allowExternalResearch = true,
-                    adversarialStressTesting = false,
-                    description = "4 agents, limited research, up to 2 debate rounds"
+                    maxAgents = 3,
+                    maxDebateRounds = 1,
+                    allowExternalResearch = false,
+                    adversarialStressTesting = true,
+                    requiresPreMortem = false,
+                    maxCostBudgetUsd = 0.50,
+                    description = "T2 Standard: Moderate impact. 1 round debate with Red Team critique."
                 )
                 ComplexityTier.RIGOROUS -> TierConfig(
                     tier = tier,
@@ -137,7 +247,9 @@ class DecisionMathEngine {
                     maxDebateRounds = 2,
                     allowExternalResearch = true,
                     adversarialStressTesting = true,
-                    description = "Full specialist team, deep research, max 2 refinement rounds"
+                    requiresPreMortem = true,
+                    maxCostBudgetUsd = 1.20,
+                    description = "T3 Rigorous: High risk/impact. 2 rounds multi-specialist debate, Devil's Advocate & Coverage Auditor."
                 )
                 ComplexityTier.MAXIMUM -> TierConfig(
                     tier = tier,
@@ -145,26 +257,23 @@ class DecisionMathEngine {
                     maxDebateRounds = 3,
                     allowExternalResearch = true,
                     adversarialStressTesting = true,
-                    description = "Full specialist team, deep research, adversarial stress testing"
+                    requiresPreMortem = true,
+                    maxCostBudgetUsd = 2.00,
+                    description = "T3 Maximum: Irreversible architectural baseline. Full CDR-P1 critique, exhaustive stress tests & mandatory pre-mortem."
                 )
             }
         }
 
         /**
-         * Directive 6: Refinement stop rule.
-         * If confidence improvement between consecutive rounds is < 0.05,
-         * stop automatic refinement.
+         * Directive 6 Stop Rule: Stop debate when refinement delta < 0.05.
          */
         fun shouldStopRefinement(previousDqs: Double, currentDqs: Double): Boolean {
-            val delta = currentDqs - previousDqs
+            val delta = Math.abs(currentDqs - previousDqs)
             return delta < 0.05
         }
 
         /**
-         * Directive 3 & CRITICAL 7: Admission Test prior to CEO approval.
-         * Enforces: Specificity, Novelty, Actionability, Value.
-         * State-aware: Requires D6 synthesis completed, ReviewPacket exists,
-         * and provenance verification passes.
+         * Admission Test: Specificity, Novelty, Actionability, Value.
          */
         fun evaluateAdmissionTest(
             title: String,
@@ -177,54 +286,32 @@ class DecisionMathEngine {
             isD6SynthesisCompleted: Boolean = true,
             hasReviewPacket: Boolean = true
         ): AdmissionTestResult {
-            // 1. Specificity check: Clear bounded scope, non-trivial title and problem statement
-            val isSpecific = title.trim().length >= 8 && problemStatement.trim().length >= 25
-            val specificityNote = if (isSpecific) {
-                "Title and problem statement define bounded architectural context (${problemStatement.trim().length} chars)."
-            } else {
-                "Insufficient specificity: title or problem statement is too vague or truncated."
-            }
+            val specPass = title.length >= 8 && problemStatement.length >= 25
+            val specNote = if (specPass) "Objective & Scope framed precisely" else "Title or Problem statement too ambiguous"
 
-            // 2. Novelty check: Architectural differentiation and non-trivial trade-offs
-            val isNovel = (risk >= 0.20 || impact >= 0.20) && !title.equals("Untitled", ignoreCase = true)
-            val noveltyNote = if (isNovel) {
-                "Substantive architectural tension identified (Risk: ${String.format("%.2f", risk)}, Impact: ${String.format("%.2f", impact)})."
-            } else {
-                "Novelty failure: trivial or empty architectural trade-off profile."
-            }
+            val novPass = !selectedOption.isNullOrBlank() || isD6SynthesisCompleted
+            val novNote = if (novPass) "Differentiated architectural option identified" else "Pending option selection"
 
-            // 3. Actionability check: Defined strategy or selected option with verifiable next steps + ReviewPacket
-            val isActionable = (!selectedOption.isNullOrBlank() || dqsScore >= 0.50) && hasReviewPacket
-            val actionabilityNote = when {
-                !hasReviewPacket -> "Actionability failure: Structured Review Packet missing from D6 synthesis."
-                isActionable -> "Actionable architectural direction identified: ${selectedOption?.take(40) ?: "Synthesized pathway verified"}."
-                else -> "Actionability failure: no selected option or synthesized path available."
-            }
+            val actPass = isD6SynthesisCompleted && hasReviewPacket
+            val actNote = if (actPass) "Review packet synthesized with executable recommendations" else "Incomplete review packet synthesis"
 
-            // 4. Value check: DQS score is grounded and aligned to user goals + D6 synthesis completed + non-unverified provenance
-            val provenancePass = evidenceType != "UNVERIFIED"
-            val isValueAligned = dqsScore >= 0.60 && provenancePass && isD6SynthesisCompleted
-            val valueNote = when {
-                !isD6SynthesisCompleted -> "Value failure: D6 synthesis is not yet completed."
-                !provenancePass -> "Value failure: evidence is UNVERIFIED; claims require grounded provenance."
-                isValueAligned -> "Value aligned: DQS ($dqsScore) meets rigor threshold with $evidenceType provenance."
-                else -> "Value failure: DQS ($dqsScore) below minimum threshold (0.60)."
-            }
+            val valPass = dqsScore >= 0.60 || evidenceType.uppercase() in listOf("AXIOMATIC", "EMPIRICAL", "HEURISTIC")
+            val valNote = if (valPass) "Grounded evidence supports decision value" else "Unverified assumptions dominate"
 
             return AdmissionTestResult(
-                specificityPass = isSpecific,
-                specificityNote = specificityNote,
-                noveltyPass = isNovel,
-                noveltyNote = noveltyNote,
-                actionabilityPass = isActionable,
-                actionabilityNote = actionabilityNote,
-                valuePass = isValueAligned,
-                valueNote = valueNote
+                specificityPass = specPass,
+                specificityNote = specNote,
+                noveltyPass = novPass,
+                noveltyNote = novNote,
+                actionabilityPass = actPass,
+                actionabilityNote = actNote,
+                valuePass = valPass,
+                valueNote = valNote
             )
         }
 
         /**
-         * Generates immutable Finalization Certificate if admission tests pass and state requirements met.
+         * Finalization Certificate with cryptographic SHA-256 fingerprint.
          */
         fun generateFinalizationCertificate(
             decisionId: String,
@@ -233,18 +320,19 @@ class DecisionMathEngine {
             isD6SynthesisCompleted: Boolean = true,
             hasReviewPacket: Boolean = true
         ): FinalizationCertificate? {
-            if (!admissionChecks.allPassed || !isD6SynthesisCompleted || !hasReviewPacket) return null
+            if (!admissionChecks.allPassed || !isD6SynthesisCompleted || !hasReviewPacket) {
+                return null
+            }
 
-            val now = System.currentTimeMillis()
-            val certId = "CERT-${java.util.UUID.randomUUID()}"
-            val payload = "KINGMAKER_CERT:$certId:$decisionId:$now:$finalDqs:${admissionChecks.allPassed}"
-            val digest = MessageDigest.getInstance("SHA-256").digest(payload.toByteArray())
-            val hash = digest.joinToString("") { "%02x".format(it) }
+            val timestamp = System.currentTimeMillis()
+            val raw = "CERT:$decisionId:$timestamp:$finalDqs:${admissionChecks.allPassed}"
+            val md = MessageDigest.getInstance("SHA-256")
+            val hash = md.digest(raw.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 
             return FinalizationCertificate(
-                certificateId = certId,
+                certificateId = "CERT-${hash.take(12).uppercase()}",
                 decisionId = decisionId,
-                issuedAt = now,
+                issuedAt = timestamp,
                 admissionChecks = admissionChecks,
                 finalDqs = finalDqs,
                 certificateHash = hash

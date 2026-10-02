@@ -20,14 +20,15 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Architecture
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudSync
-import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Language
+import com.example.ui.localization.AppLanguage
+import com.example.ui.localization.LocalAppStrings
 import com.example.services.AiEngineMode
 import com.example.services.ApiSettings
-import com.example.services.UpdateStatus
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,11 +65,13 @@ import com.example.ui.theme.TextSecondary
 
 @Composable
 fun HeaderCockpitBar(
-    projectName: String = "ALPHA-ARCHITECTURE-V4",
+    projectName: String = "KINGMAKER-V7-WORKSPACE",
     decisions: List<DecisionEntity>,
     userEmail: String = "engr.nirzor.me.02@gmail.com",
     cloudSyncStatus: String = "FIREBASE READY",
     isSyncing: Boolean = false,
+    currentLanguage: AppLanguage = AppLanguage.BN,
+    onSelectLanguage: (AppLanguage) -> Unit = {},
     onTriggerDeadlockDemo: () -> Unit,
     onSyncToCloud: () -> Unit = {},
     onLoginAccount: (email: String, pass: String) -> Unit = { _, _ -> },
@@ -76,12 +79,12 @@ fun HeaderCockpitBar(
     apiSettings: ApiSettings? = null,
     onSaveApiSettings: (apiKey: String, endpoint: String, model: String, enabled: Boolean) -> Unit = { _, _, _, _ -> },
     onTestApiConnection: suspend (apiKey: String) -> Pair<Boolean, String> = { Pair(true, "") },
-    updateStatus: UpdateStatus = UpdateStatus.Idle,
-    onOpenUpdateDialog: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
     var showAccountDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showLanguageDialog by remember { mutableStateOf(false) }
     var inputEmail by remember { mutableStateOf(userEmail) }
     var inputPassword by remember { mutableStateOf("kingmaker2026") }
 
@@ -94,8 +97,151 @@ fun HeaderCockpitBar(
             currentSettings = apiSettings,
             onSaveSettings = onSaveApiSettings,
             onTestConnection = onTestApiConnection,
-            onOpenUpdateDialog = onOpenUpdateDialog,
+            currentLanguage = currentLanguage,
+            onSelectLanguage = onSelectLanguage,
             onDismiss = { showSettingsDialog = false }
+        )
+    }
+
+    if (showLanguageDialog) {
+        AlertDialog(
+            onDismissRequest = { showLanguageDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Language,
+                        contentDescription = null,
+                        tint = CyanTelemetry,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = strings.languageDialogTitle,
+                        color = TextPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = strings.languageDialogDesc,
+                        color = TextMuted,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Bengali Option (Default)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                if (currentLanguage == AppLanguage.BN) IndigoNexus.copy(alpha = 0.25f) else SlateSurface,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .border(
+                                1.dp,
+                                if (currentLanguage == AppLanguage.BN) IndigoNexus else BorderHairline,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable {
+                                onSelectLanguage(AppLanguage.BN)
+                                showLanguageDialog = false
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = strings.languageBengali,
+                                    color = TextPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .background(EmeraldGate.copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                                ) {
+                                    Text("DEFAULT", color = EmeraldGate, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Text(
+                                text = "ডিফল্ট সিস্টেম ভাষা (বাংলা ইন্টারফেস)",
+                                color = TextMuted,
+                                fontSize = 10.sp
+                            )
+                        }
+                        if (currentLanguage == AppLanguage.BN) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = EmeraldGate,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // English Option
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                if (currentLanguage == AppLanguage.EN) IndigoNexus.copy(alpha = 0.25f) else SlateSurface,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .border(
+                                1.dp,
+                                if (currentLanguage == AppLanguage.EN) IndigoNexus else BorderHairline,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable {
+                                onSelectLanguage(AppLanguage.EN)
+                                showLanguageDialog = false
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = strings.languageEnglish,
+                                color = TextPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "English UI (Standard Technical)",
+                                color = TextMuted,
+                                fontSize = 10.sp
+                            )
+                        }
+                        if (currentLanguage == AppLanguage.EN) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = EmeraldGate,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                OutlinedButton(onClick = { showLanguageDialog = false }) {
+                    Text(strings.close, color = TextMuted, fontSize = 10.sp)
+                }
+            },
+            containerColor = SlateSurfaceElevated,
+            shape = RoundedCornerShape(12.dp)
         )
     }
 
@@ -112,7 +258,7 @@ fun HeaderCockpitBar(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "FIREBASE CLOUD SYNC & ACCOUNT",
+                        text = strings.accountDialogTitle,
                         color = TextPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -123,7 +269,7 @@ fun HeaderCockpitBar(
             text = {
                 Column {
                     Text(
-                        text = "লগইন করা অ্যাকাউন্ট অনুযায়ী Firestore থেকে শেষ সংরক্ষিত অবস্থা, ব্রাঞ্চ ও অডিট হিস্ট্রি পুনরুদ্ধার করা হবে।",
+                        text = strings.accountDialogDesc,
                         color = TextMuted,
                         fontSize = 11.sp,
                         lineHeight = 15.sp
@@ -133,7 +279,7 @@ fun HeaderCockpitBar(
                     OutlinedTextField(
                         value = inputEmail,
                         onValueChange = { inputEmail = it },
-                        label = { Text("Account Email", color = TextMuted, fontSize = 10.sp) },
+                        label = { Text(strings.emailLabel, color = TextMuted, fontSize = 10.sp) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = CyanTelemetry,
                             unfocusedBorderColor = BorderHairline,
@@ -150,7 +296,7 @@ fun HeaderCockpitBar(
                     OutlinedTextField(
                         value = inputPassword,
                         onValueChange = { inputPassword = it },
-                        label = { Text("Password", color = TextMuted, fontSize = 10.sp) },
+                        label = { Text(strings.passwordLabel, color = TextMuted, fontSize = 10.sp) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = CyanTelemetry,
                             unfocusedBorderColor = BorderHairline,
@@ -164,7 +310,7 @@ fun HeaderCockpitBar(
 
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "Status: $cloudSyncStatus",
+                        text = "${strings.statusLabel} $cloudSyncStatus",
                         color = EmeraldGate,
                         fontSize = 9.sp,
                         fontFamily = FontFamily.Monospace
@@ -179,7 +325,7 @@ fun HeaderCockpitBar(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = IndigoNexus)
                 ) {
-                    Text("LOGIN & RESTORE STATE", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(strings.btnLoginRestore, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -191,7 +337,7 @@ fun HeaderCockpitBar(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = EmeraldGate)
                     ) {
-                        Text("SYNC NOW", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text(strings.btnSyncNow, color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     OutlinedButton(
@@ -201,11 +347,11 @@ fun HeaderCockpitBar(
                         },
                         colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = CrimsonAlert)
                     ) {
-                        Text("PURGE DEMO", color = CrimsonAlert, fontSize = 9.sp)
+                        Text(strings.btnPurgeDemo, color = CrimsonAlert, fontSize = 9.sp)
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     OutlinedButton(onClick = { showAccountDialog = false }) {
-                        Text("CLOSE", color = TextMuted, fontSize = 9.sp)
+                        Text(strings.close, color = TextMuted, fontSize = 9.sp)
                     }
                 }
             },
@@ -245,7 +391,7 @@ fun HeaderCockpitBar(
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "NIRZOR KINGMAKER",
+                            text = strings.appName,
                             color = TextPrimary,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Black,
@@ -259,7 +405,7 @@ fun HeaderCockpitBar(
                                 .padding(horizontal = 4.dp, vertical = 1.dp)
                         ) {
                             Text(
-                                text = "v4.1 OS",
+                                text = strings.versionTag,
                                 color = Color.White,
                                 fontSize = 8.sp,
                                 fontWeight = FontWeight.Bold,
@@ -268,7 +414,7 @@ fun HeaderCockpitBar(
                         }
                     }
                     Text(
-                        text = "LEAD ARCHITECT: NIRZOR • RED_TEAM_L3",
+                        text = strings.leadArchitect,
                         color = CyanTelemetry,
                         fontSize = 8.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -281,7 +427,7 @@ fun HeaderCockpitBar(
             // Global Confidence Score (Avg DQS)
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = "GLOBAL DQS",
+                    text = strings.globalDqs,
                     color = TextMuted,
                     fontSize = 8.sp,
                     fontFamily = FontFamily.Monospace
@@ -301,7 +447,7 @@ fun HeaderCockpitBar(
         // Firebase User Account & API Control Bar
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Firebase User Account & Cloud Sync Pill
@@ -350,13 +496,38 @@ fun HeaderCockpitBar(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = if (isSyncing) "SYNC..." else "CLOUD",
+                        text = if (isSyncing) strings.syncStatusSyncing else strings.syncStatusCloud,
                         color = if (isSyncing) CyanTelemetry else EmeraldGate,
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace
                     )
                 }
+            }
+
+            // Language Selector Pill
+            Row(
+                modifier = Modifier
+                    .background(Color(0xFF0F172A), shape = RoundedCornerShape(6.dp))
+                    .border(1.dp, IndigoNexus.copy(alpha = 0.7f), shape = RoundedCornerShape(6.dp))
+                    .clickable { showLanguageDialog = true }
+                    .padding(horizontal = 7.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Language,
+                    contentDescription = "Language",
+                    tint = CyanTelemetry,
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(3.dp))
+                Text(
+                    text = if (currentLanguage == AppLanguage.BN) "বাংলা" else "EN",
+                    color = CyanTelemetry,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
             }
 
             // AI Engine & API Key Settings Pill
@@ -369,21 +540,21 @@ fun HeaderCockpitBar(
                         shape = RoundedCornerShape(6.dp)
                     )
                     .clickable { showSettingsDialog = true }
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .padding(horizontal = 7.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "API Settings",
                     tint = if (apiSettings?.activeEngineMode == AiEngineMode.EXTERNAL_KEY) EmeraldGate else CyanTelemetry,
-                    modifier = Modifier.size(14.dp)
+                    modifier = Modifier.size(13.dp)
                 )
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(3.dp))
                 Text(
                     text = when (apiSettings?.activeEngineMode) {
-                        AiEngineMode.EXTERNAL_KEY -> "API: CUSTOM"
-                        AiEngineMode.OFFLINE_DETERMINISTIC -> "API: OFFLINE"
-                        else -> "API: CONFIG"
+                        AiEngineMode.EXTERNAL_KEY -> strings.apiModeCustom
+                        AiEngineMode.OFFLINE_DETERMINISTIC -> strings.apiModeOffline
+                        else -> strings.apiModeConfig
                     },
                     color = if (apiSettings?.activeEngineMode == AiEngineMode.EXTERNAL_KEY) EmeraldGate else CyanTelemetry,
                     fontSize = 8.sp,
@@ -392,42 +563,19 @@ fun HeaderCockpitBar(
                 )
             }
 
-            // In-App OTA Update Pill
+            // Baseline Badge
             Row(
                 modifier = Modifier
                     .background(Color(0xFF0F172A), shape = RoundedCornerShape(6.dp))
-                    .border(
-                        1.dp,
-                        if (updateStatus is UpdateStatus.Available) CyanTelemetry else Color(0xFF1E293B),
-                        shape = RoundedCornerShape(6.dp)
-                    )
-                    .clickable { onOpenUpdateDialog() }
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .border(1.dp, IndigoNexus.copy(alpha = 0.5f), shape = RoundedCornerShape(6.dp))
+                    .padding(horizontal = 7.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (updateStatus is UpdateStatus.Checking || updateStatus is UpdateStatus.Downloading) {
-                    CircularProgressIndicator(
-                        color = CyanTelemetry,
-                        strokeWidth = 1.5.dp,
-                        modifier = Modifier.size(12.dp)
-                    )
-                } else {
-                    Icon(
-                        imageVector = if (updateStatus is UpdateStatus.Available) Icons.Default.NewReleases else Icons.Default.SystemUpdate,
-                        contentDescription = "App Updates",
-                        tint = if (updateStatus is UpdateStatus.Available) CyanTelemetry else TextMuted,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
+                Box(modifier = Modifier.size(5.dp).background(EmeraldGate, shape = CircleShape))
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = when (updateStatus) {
-                        is UpdateStatus.Available -> "UPDATE!"
-                        is UpdateStatus.Downloading -> "${updateStatus.progressPercent}%"
-                        is UpdateStatus.ReadyToInstall -> "INSTALL"
-                        else -> "OTA"
-                    },
-                    color = if (updateStatus is UpdateStatus.Available || updateStatus is UpdateStatus.ReadyToInstall) CyanTelemetry else TextMuted,
+                    text = strings.baselineBadge,
+                    color = EmeraldGate,
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
@@ -456,7 +604,7 @@ fun HeaderCockpitBar(
                 )
                 Spacer(modifier = Modifier.width(5.dp))
                 Text(
-                    text = "SQLITE WAL: ACTIVE",
+                    text = strings.sqliteWalActive,
                     color = EmeraldGate,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
@@ -472,7 +620,7 @@ fun HeaderCockpitBar(
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "NODES: ${decisions.size}",
+                    text = String.format(strings.nodesCount, decisions.size),
                     color = TextMuted,
                     fontSize = 9.sp,
                     fontFamily = FontFamily.Monospace
@@ -487,7 +635,7 @@ fun HeaderCockpitBar(
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
                 Text(
-                    text = "+ TEST CYCLE",
+                    text = strings.testCycleBtn,
                     color = CyanTelemetry,
                     fontSize = 8.sp,
                     fontFamily = FontFamily.Monospace

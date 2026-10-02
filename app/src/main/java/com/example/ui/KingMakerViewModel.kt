@@ -23,11 +23,11 @@ import com.example.data.repository.DecisionRepository
 import com.example.data.repository.ForkResult
 import com.example.services.ApiConfigManager
 import com.example.services.ApiSettings
-import com.example.services.AppUpdateManager
 import com.example.services.FirebaseSyncService
 import com.example.services.SyncResult
-import com.example.services.UpdateStatus
 import com.nirzor.kingmaker.data.AppDatabase
+import com.example.ui.localization.AppLanguage
+import com.example.ui.localization.LocalizationManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -73,8 +73,22 @@ class KingMakerViewModel(application: Application) : AndroidViewModel(applicatio
     private val repository = DecisionRepository(db.decisionDao())
     private val firebaseService = FirebaseSyncService(application, db.decisionDao())
     private val apiConfigManager = ApiConfigManager(application)
-    val appUpdateManager = AppUpdateManager(application)
-    val updateStatus: StateFlow<UpdateStatus> = appUpdateManager.updateStatus
+    private val localizationManager = LocalizationManager.getInstance(application)
+
+    // Language State & Persistence (Defaults to BN / Bengali)
+    val currentLanguage: StateFlow<AppLanguage> = localizationManager.currentLanguage
+
+    fun setLanguage(language: AppLanguage) {
+        localizationManager.setLanguage(language)
+    }
+
+    // Section 51.3: What-if Simulation State
+    private val _whatIfSimulation = MutableStateFlow<com.example.core.graph.WhatIfSimulationResult?>(null)
+    val whatIfSimulation: StateFlow<com.example.core.graph.WhatIfSimulationResult?> = _whatIfSimulation.asStateFlow()
+
+    // Section 52: Reconciliation Diff State
+    private val _reconciliationDiff = MutableStateFlow<com.example.core.graph.SemanticGraphDiff?>(null)
+    val reconciliationDiff: StateFlow<com.example.core.graph.SemanticGraphDiff?> = _reconciliationDiff.asStateFlow()
 
     // Active Git Branch state (defaults to 'main' or saved session)
     private val _activeBranchId = MutableStateFlow(firebaseService.getSavedBranchId())
@@ -191,9 +205,6 @@ class KingMakerViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             db.ensureInitialDataSeeded()
             refreshCycles()
-            if (appUpdateManager.updateSettings.value.autoCheckOnLaunch) {
-                appUpdateManager.checkForUpdates()
-            }
         }
         initializeDefaultTags()
     }
@@ -572,15 +583,26 @@ class KingMakerViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * Directive 13 & Invariant 2: Human CEO Gate Attestation.
+     * Section 53.4 & Invariant I-01, I-02: Human CEO Gate Attestation.
      */
-    fun executeCeoApprovalSignature(signerName: String = "Authorized CEO / Chief Architect") {
+    fun executeCeoApprovalSignature(
+        signerName: String = "Authorized CEO / Chief Architect",
+        rationale: String = "Approved with validated empirical evidence and policy compliance.",
+        preMortem: String? = null,
+        selectedOption: String? = null
+    ) {
         val decision = _selectedDecision.value ?: return
         _gateErrorMessage.value = null
 
         viewModelScope.launch {
             try {
-                val hash = repository.executeCeoAttestationSignature(decision.id, signerName)
+                val hash = repository.executeCeoAttestationSignature(
+                    id = decision.id,
+                    signerName = signerName,
+                    rationale = rationale,
+                    preMortem = preMortem,
+                    selectedOption = selectedOption
+                )
                 _signatureHash.value = hash
                 val updated = db.decisionDao().getDecisionByIdSync(decision.id)
                 _selectedDecision.value = updated
@@ -588,6 +610,67 @@ class KingMakerViewModel(application: Application) : AndroidViewModel(applicatio
                 _gateErrorMessage.value = e.message ?: "CEO Gate Authorization Failed"
             }
         }
+    }
+
+    fun rejectSelectedDecision(rationale: String) {
+        val decision = _selectedDecision.value ?: return
+        viewModelScope.launch {
+            repository.rejectDecision(decision.id, rationale)
+            _selectedDecision.value = db.decisionDao().getDecisionByIdSync(decision.id)
+        }
+    }
+
+    fun deferSelectedDecision(rationale: String) {
+        val decision = _selectedDecision.value ?: return
+        viewModelScope.launch {
+            repository.deferDecision(decision.id, rationale)
+            _selectedDecision.value = db.decisionDao().getDecisionByIdSync(decision.id)
+        }
+    }
+
+    fun recordOutcomeForSelected(
+        expected: String,
+        observed: String,
+        divergence: com.example.data.local.OutcomeDivergence,
+        followUp: String
+    ) {
+        val decision = _selectedDecision.value ?: return
+        viewModelScope.launch {
+            repository.recordOutcomeObservation(decision.id, expected, observed, divergence, followUp)
+            _selectedDecision.value = db.decisionDao().getDecisionByIdSync(decision.id)
+        }
+    }
+
+    fun simulateGraphEdge(fromId: String, toId: String, relationship: String = "DEPENDS_ON", action: String = "ADD") {
+        viewModelScope.launch {
+            _whatIfSimulation.value = repository.simulateEdgeOperation(fromId, toId, relationship, action)
+        }
+    }
+
+    fun clearWhatIfSimulation() {
+        _whatIfSimulation.value = null
+    }
+
+    fun applyWhatIfMutation(candidateEdge: com.example.core.graph.GraphEdge, action: String) {
+        viewModelScope.launch {
+            if (action == "ADD") {
+                repository.addDependencyEdge(candidateEdge.from, candidateEdge.to, candidateEdge.relationship)
+            } else {
+                repository.removeDependencyEdge(candidateEdge.from, candidateEdge.to)
+            }
+            _whatIfSimulation.value = null
+            refreshCycles()
+        }
+    }
+
+    fun computeGraphReconciliationDiff(localEdges: List<com.example.core.graph.GraphEdge>) {
+        viewModelScope.launch {
+            _reconciliationDiff.value = repository.computeGraphReconciliationDiff(localEdges)
+        }
+    }
+
+    fun clearReconciliationDiff() {
+        _reconciliationDiff.value = null
     }
 
     /**

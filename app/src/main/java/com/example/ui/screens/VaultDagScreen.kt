@@ -50,8 +50,9 @@ import com.example.data.local.DecisionBranchEntity
 import com.example.data.local.DecisionEdgeEntity
 import com.example.data.local.DecisionEntity
 import com.example.data.local.ResolutionTaskEntity
+import com.example.ui.localization.AppLanguage
+import com.example.ui.localization.LocalAppStrings
 import com.example.ui.components.ComplexityBadge
-import com.example.ui.components.DqsGauge
 import com.example.ui.components.ForkTimelineDialog
 import com.example.ui.components.HapticFeedbackHelper
 import com.example.ui.components.HeaderCockpitBar
@@ -91,16 +92,17 @@ fun VaultDagScreen(
     userEmail: String = "engr.nirzor.me.02@gmail.com",
     cloudSyncStatus: String = "FIREBASE READY",
     isSyncing: Boolean = false,
+    currentLanguage: AppLanguage = AppLanguage.BN,
+    onSelectLanguage: (AppLanguage) -> Unit = {},
     onSyncToCloud: () -> Unit = {},
     onLoginAccount: (email: String, pass: String) -> Unit = { _, _ -> },
     onPurgeWorkspace: () -> Unit = {},
     apiSettings: com.example.services.ApiSettings? = null,
     onSaveApiSettings: (apiKey: String, endpoint: String, model: String, enabled: Boolean) -> Unit = { _, _, _, _ -> },
     onTestApiConnection: suspend (apiKey: String) -> Pair<Boolean, String> = { Pair(true, "") },
-    updateStatus: com.example.services.UpdateStatus = com.example.services.UpdateStatus.Idle,
-    onOpenUpdateDialog: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
     val context = LocalContext.current
     var showForkDialog by remember { mutableStateOf(false) }
     var forkingSourceDecision by remember { mutableStateOf<DecisionEntity?>(null) }
@@ -122,15 +124,15 @@ fun VaultDagScreen(
                     userEmail = userEmail,
                     cloudSyncStatus = cloudSyncStatus,
                     isSyncing = isSyncing,
+                    currentLanguage = currentLanguage,
+                    onSelectLanguage = onSelectLanguage,
                     onTriggerDeadlockDemo = onTriggerDeadlockDemo,
                     onSyncToCloud = onSyncToCloud,
                     onLoginAccount = onLoginAccount,
                     onPurgeWorkspace = onPurgeWorkspace,
                     apiSettings = apiSettings,
                     onSaveApiSettings = onSaveApiSettings,
-                    onTestApiConnection = onTestApiConnection,
-                    updateStatus = updateStatus,
-                    onOpenUpdateDialog = onOpenUpdateDialog
+                    onTestApiConnection = onTestApiConnection
                 )
             }
 
@@ -355,10 +357,10 @@ fun VaultDagScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Add, contentDescription = "New Decision Stream")
+                Icon(Icons.Default.Add, contentDescription = strings.btnNewDecision)
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "NEW STREAM",
+                    text = strings.btnNewDecision,
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace
@@ -389,6 +391,7 @@ fun DecisionCardItem(
     onOpenWarRoom: () -> Unit,
     onOpenBlueprint: () -> Unit
 ) {
+    val strings = LocalAppStrings.current
     val borderColor = when {
         isRippleAffected -> CrimsonAlert
         isSelected -> CyanTelemetry
@@ -437,7 +440,20 @@ fun DecisionCardItem(
                         )
                     }
                 }
-                DqsGauge(score = decision.dqsScore, size = 36.dp)
+                Box(
+                    modifier = Modifier
+                        .background(if (decision.dqsScore >= 0.80) EmeraldGate.copy(alpha = 0.15f) else CyanTelemetry.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                        .border(1.dp, if (decision.dqsScore >= 0.80) EmeraldGate else CyanTelemetry, RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "${(decision.dqsScore * 100).toInt()}% Q-Score",
+                        color = if (decision.dqsScore >= 0.80) EmeraldGate else CyanTelemetry,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -485,7 +501,7 @@ fun DecisionCardItem(
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = "WAR ROOM",
+                            text = strings.btnWarRoom,
                             color = CyanTelemetry,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
@@ -501,7 +517,7 @@ fun DecisionCardItem(
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = "BLUEPRINT",
+                            text = strings.btnBlueprint,
                             color = EmeraldGate,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,

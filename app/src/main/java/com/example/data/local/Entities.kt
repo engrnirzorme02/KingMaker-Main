@@ -5,22 +5,128 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+/**
+ * KingMaker v7.0 Canonical Decision Lifecycle States.
+ * Section 28 & 40:
+ * DRAFT -> CONTEXT_REQUIRED -> FRAMING -> READY_FOR_DEBATE -> DEBATING -> CRITIQUE ->
+ * SYNTHESIS -> HUMAN_REVIEW -> APPROVED -> ADR_PUBLISHED -> BLUEPRINT_UPDATED -> OUTCOME_TRACKING
+ * Branching: REJECTED, DEFERRED, REVISION_REQUESTED
+ */
 object DecisionStatus {
-    const val D1_INTAKE = "D1_INTAKE"
-    const val D2_FRAMING = "D2_FRAMING"
-    const val D3_CONFIRMATION = "D3_CONFIRMATION"
-    const val D4_DEBATE = "D4_DEBATE"
-    const val D5_CRITIQUE = "D5_CRITIQUE"
-    const val D6_SYNTHESIS = "D6_SYNTHESIS"
-    const val D7_REVIEW = "D7_REVIEW"
+    const val DRAFT = "DRAFT"
+    const val CONTEXT_REQUIRED = "CONTEXT_REQUIRED"
+    const val FRAMING = "FRAMING"
+    const val READY_FOR_DEBATE = "READY_FOR_DEBATE"
+    const val DEBATING = "DEBATING"
+    const val CRITIQUE = "CRITIQUE"
+    const val SYNTHESIS = "SYNTHESIS"
+    const val HUMAN_REVIEW = "HUMAN_REVIEW"
     const val APPROVED = "APPROVED"
+    const val ADR_PUBLISHED = "ADR_PUBLISHED"
+    const val BLUEPRINT_UPDATED = "BLUEPRINT_UPDATED"
+    const val OUTCOME_TRACKING = "OUTCOME_TRACKING"
+    const val REJECTED = "REJECTED"
+    const val DEFERRED = "DEFERRED"
+    const val REVISION_REQUESTED = "REVISION_REQUESTED"
+
+    // Legacy aliases for backward compatibility with existing tests
+    const val D1_INTAKE = DRAFT
+    const val D2_FRAMING = FRAMING
+    const val D3_CONFIRMATION = READY_FOR_DEBATE
+    const val D4_DEBATE = DEBATING
+    const val D5_CRITIQUE = CRITIQUE
+    const val D6_SYNTHESIS = SYNTHESIS
+    const val D7_REVIEW = HUMAN_REVIEW
 }
 
-enum class ProvenanceType {
-    VERIFIED,
-    EXPERT_INFERENCE,
+/**
+ * KingMaker v7.0 Typed Epistemology Claims (Section 6 & 47).
+ * - UNKNOWN is a valid first-class state.
+ * - ASSUMPTION cannot be silently rendered as FACT.
+ * - INFERENCE cannot become evidence merely because a model is confident.
+ */
+enum class ClaimType {
+    FACT,
+    CONSTRAINT,
+    PREFERENCE,
+    INFERENCE,
+    RECOMMENDATION,
+    RISK,
     ASSUMPTION,
+    UNKNOWN,
     UNVERIFIED
+}
+
+// Backward compatibility alias for existing code
+typealias ProvenanceType = ClaimType
+
+/**
+ * Section 46.2: Explicit Provenance Modes.
+ * SIMULATED, REPLAY, PROVIDER_BACKED.
+ * Must appear consistently in UI, never conflated.
+ */
+enum class ProvenanceMode {
+    SIMULATED,
+    REPLAY,
+    PROVIDER_BACKED
+}
+
+/**
+ * Section 58: Outcome Divergence Classification.
+ */
+enum class OutcomeDivergence {
+    ALIGNED,
+    MINOR_DRIFT,
+    MAJOR_DRIFT,
+    DECISION_INVALIDATION,
+    INSUFFICIENT_DATA
+}
+
+/**
+ * Section 52.4: Conflict Classes for Offline-to-Online Reconciliation.
+ */
+enum class ConflictClass {
+    NON_OVERLAPPING,
+    SAME_NODE_FIELD_CONFLICT,
+    SAME_EDGE_CONFLICT,
+    TOPOLOGY_CONFLICT,
+    CYCLE_CONFLICT,
+    POLICY_APPROVAL_INVALIDATION,
+    HISTORICAL_SUPERSESSION
+}
+
+/**
+ * 9-Dimensional Quality Vector (Section 9 & 48).
+ * Replaces legacy single scalar DQS.
+ */
+data class QualityVector(
+    val evidenceStrength: Double,     // 0.0 to 1.0 (grounded vs ungrounded)
+    val frameCompleteness: Double,    // 0.0 to 1.0 (objective, non-goals, constraints, criteria)
+    val constraintFit: Double,        // 0.0 to 1.0 (satisfies non-negotiable boundaries)
+    val optionCoverage: Double,       // 0.0 to 1.0 (diversity of realistic alternatives)
+    val reversibility: Double,        // 0.0 to 1.0 (two-way door vs one-way door)
+    val riskExposure: Double,         // 0.0 to 1.0 (downside vulnerability, lower = safer)
+    val disagreement: Double,         // 0.0 to 1.0 (extent of specialist dissent)
+    val validationReadiness: Double,  // 0.0 to 1.0 (clarity of tests and falsifiability)
+    val complexityPenalty: Double,    // 0.0 to 1.0 (cognitive & architectural bloat penalty)
+    val compositeHeuristic: Double,   // Diagnostic summary only; never automatic approval
+    val explanation: String
+) {
+    companion object {
+        fun default(): QualityVector = QualityVector(
+            evidenceStrength = 0.50,
+            frameCompleteness = 0.50,
+            constraintFit = 0.50,
+            optionCoverage = 0.50,
+            reversibility = 0.50,
+            riskExposure = 0.50,
+            disagreement = 0.30,
+            validationReadiness = 0.50,
+            complexityPenalty = 0.20,
+            compositeHeuristic = 0.50,
+            explanation = "Initial baseline quality assessment under PolicyVersion v7.0."
+        )
+    }
 }
 
 @Entity(
@@ -28,23 +134,24 @@ enum class ProvenanceType {
     indices = [
         Index(value = ["projectId"]),
         Index(value = ["status"]),
-        Index(value = ["branchId"])
+        Index(value = ["branchId"]),
+        Index(value = ["revisionHash"])
     ]
 )
 data class DecisionEntity(
     @PrimaryKey val id: String,
     val title: String,
     val problemStatement: String,
-    val status: String, // D1_INTAKE -> D2_FRAMING -> D3_CONFIRMATION -> D4_DEBATE -> D5_CRITIQUE -> D6_SYNTHESIS -> D7_REVIEW -> APPROVED
+    val status: String,
     val complexityScore: Double, // 0.0 to 1.0
-    val complexityTier: String,  // LIGHT, STANDARD, RIGOROUS, MAXIMUM
-    val dqsScore: Double,        // 0.0 to 1.0
+    val complexityTier: String,  // T1_LIGHT, T2_STANDARD, T3_COMPREHENSIVE
+    val dqsScore: Double,        // Legacy compatibility composite (0.0 to 1.0)
     val risk: Double,
     val impact: Double,
     val changeability: Double,
     val budget: Double,
-    val projectId: String,
-    val evidenceType: String,    // AXIOMATIC, EMPIRICAL, HEURISTIC, ASSUMPTION, UNVERIFIED
+    val projectId: String = "default-workspace",
+    val evidenceType: String = "HEURISTIC",
     val selectedOption: String? = null,
     val digitalSignatureHash: String? = null,
     val approvedAt: Long? = null,
@@ -52,15 +159,30 @@ data class DecisionEntity(
     val parentBranchId: String? = null,
     val forkedFromDecisionId: String? = null,
 
-    // D3 Confirmation State Guards
+    // Framing & Consequential Guards (Steps 1-4)
     val scopeConfirmed: Boolean = false,
     val focusAreaConfirmed: Boolean = false,
     val constraintsConfirmed: Boolean = false,
     val goalsConfirmed: Boolean = false,
 
-    // D6 Review Packet & D7 Finalization Certificate
+    // Review Packet & Certificate JSON
     val reviewPacketJson: String? = null,
     val admissionCertificateJson: String? = null,
+
+    // KingMaker v7.0 Extensions
+    val revisionNumber: Int = 1,
+    val revisionHash: String? = null,
+    val qualityVectorJson: String? = null,
+    val preMortemRationale: String? = null,
+    val approvalRationale: String? = null,
+    val provenanceMode: String = "SIMULATED", // SIMULATED, REPLAY, PROVIDER_BACKED
+    val policyVersion: String = "v7.0-personal",
+
+    // Outcome tracking (Section 58)
+    val expectedOutcome: String? = null,
+    val observedOutcome: String? = null,
+    val outcomeDivergence: String? = null, // ALIGNED, MINOR_DRIFT, MAJOR_DRIFT, DECISION_INVALIDATION
+    val outcomeReviewDate: Long? = null,
 
     val createdTimestamp: Long = System.currentTimeMillis(),
     val updatedTimestamp: Long = System.currentTimeMillis()
@@ -68,8 +190,7 @@ data class DecisionEntity(
 
 /**
  * Append-Only Event Log for SQLite (WAL Mode).
- * Invariant 3: Decisions are never overwritten. Every state-changing action appends
- * an immutable revision event in local SQLite.
+ * Invariant I-04 & I-06: Immutable governance events with revision hash and provenance.
  */
 @Entity(
     tableName = "decision_events",
@@ -91,9 +212,15 @@ data class DecisionEventEntity(
     val parent_branch_id: String? = null,
     @ColumnInfo(name = "forked_at_event_id")
     val forked_at_event_id: String? = null,
+    val revisionHash: String? = null,
+    val policyVersion: String = "v7.0-personal",
     val timestamp: Long = System.currentTimeMillis()
 )
 
+/**
+ * Typed Decision Graph Edges (Section 12 & 51).
+ * Relationships: DEPENDS_ON, CONSTRAINS, SUPPORTS, SUPERSEDES, CONTRADICTS, DERIVED_FROM, AFFECTS
+ */
 @Entity(
     tableName = "decision_edges",
     primaryKeys = ["fromDecisionId", "toDecisionId"],
@@ -121,8 +248,9 @@ data class DecisionBranchEntity(
 )
 
 /**
- * Directive 8 & Invariant 7: Resolution Task for Cycles.
- * Cycle detection never silently resolves automatically. It records a human Resolution Task.
+ * Section 12 & 51: Resolution Task for Cycles.
+ * Deduplicated by revisionHash + sorted nodeIds + sorted cycleEdgeIds.
+ * Cycle detection never silently resolves; requires human authorization.
  */
 @Entity(tableName = "resolution_tasks")
 data class ResolutionTaskEntity(
@@ -132,6 +260,8 @@ data class ResolutionTaskEntity(
     val reason: String,
     val status: String = "PENDING", // PENDING, RESOLVED
     val resolutionNote: String? = null,
+    val proposedAction: String? = null,
+    val cycleHash: String? = null,
     val createdTimestamp: Long = System.currentTimeMillis(),
     val resolvedTimestamp: Long? = null
 )
