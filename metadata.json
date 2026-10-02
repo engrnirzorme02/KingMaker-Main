@@ -1,0 +1,6 @@
+{
+  "name": "Nirzor KingMaker",
+  "description": "Offline Deterministic Multi-Agent Decision Intelligence OS & Architectural Cockpit with D1-D7 pipeline, immutable SQLite WAL event sourcing, and Human-in-the-Loop CEO Gate.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

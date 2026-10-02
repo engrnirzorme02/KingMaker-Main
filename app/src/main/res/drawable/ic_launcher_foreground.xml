@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Outer hexagonal node connections -->
+    <path
+        android:pathData="M54,26 L76,38 L76,68 L54,82 L32,68 L32,38 Z"
+        android:strokeWidth="1.8"
+        android:strokeColor="#38BDF8"
+        android:fillColor="#1510B981" />
+
+    <!-- Center King Crown Geometry -->
+    <path
+        android:pathData="M38,64 L34,44 L45,52 L54,34 L63,52 L74,44 L70,64 Z"
+        android:fillColor="#10B981"
+        android:strokeWidth="1.2"
+        android:strokeColor="#6EE7B7" />
+
+    <!-- Crown Base Band -->
+    <path
+        android:pathData="M36,66 L72,66 L70,72 L38,72 Z"
+        android:fillColor="#F59E0B" />
+
+    <!-- Core Decision Node Nodes / Vertices -->
+    <!-- Top Central Node -->
+    <path
+        android:pathData="M54,34 m-3,0 a3,3 0 1,1 6,0 a3,3 0 1,1 -6,0"
+        android:fillColor="#F59E0B" />
+    <!-- Left Top Node -->
+    <path
+        android:pathData="M34,44 m-2.5,0 a2.5,2.5 0 1,1 5,0 a2.5,2.5 0 1,1 -5,0"
+        android:fillColor="#38BDF8" />
+    <!-- Right Top Node -->
+    <path
+        android:pathData="M74,44 m-2.5,0 a2.5,2.5 0 1,1 5,0 a2.5,2.5 0 1,1 -5,0"
+        android:fillColor="#38BDF8" />
+    <!-- Center Jewel Node -->
+    <path
+        android:pathData="M54,55 m-2.5,0 a2.5,2.5 0 1,1 5,0 a2.5,2.5 0 1,1 -5,0"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Bottom Decision Lock Icon Silhouette -->
+    <path
+        android:pathData="M51,77 h6 v4 h-6 z"
+        android:fillColor="#10B981" />
+</vector>
